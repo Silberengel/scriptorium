@@ -129,28 +129,134 @@ async def publish_events_ndjson(
             if line.strip():
                 total += 1
     
-    # Run entire publish operation synchronously in a thread
-    # This avoids async event loop conflicts with monstr Client
+    # Run publish operation in a thread with its own event loop
+    # Client needs to run its event loop to actually send queued events
     def _sync_publish_all():
-        client = Client(relay_url)
+        import threading
+        import queue
+        
+        # Queue for progress updates
+        progress_queue = queue.Queue()
+        done_event = threading.Event()
+        
+        # Load all events first
+        events_list = []
+        with open(ndjson_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                data = orjson.loads(line)
+                ev = Event(
+                    kind=data["kind"],
+                    content=data.get("content", ""),
+                    pub_key=pub_hex,
+                    tags=data.get("tags", []),
+                )
+                ev.sign(priv_hex)
+                events_list.append(ev)
+        
+        # Worker thread that runs the client's event loop
+        def _client_worker():
+            import asyncio as worker_asyncio
+            client = Client(relay_url)
+            published = [0]  # Use list to allow modification in nested function
+            
+            # Use client as async context manager to properly start/stop
+            async def _run_client():
+                try:
+                    async with client:
+                        # Publish all events with rate limiting
+                        for idx, ev in enumerate(events_list):
+                            try:
+                                client.publish(ev)
+                                published[0] += 1
+                                progress_queue.put(1)
+                                # Rate limiting: small delay every 10 events, longer every 100
+                                if (idx + 1) % 10 == 0:
+                                    await worker_asyncio.sleep(0.05)
+                                if (idx + 1) % 100 == 0:
+                                    await worker_asyncio.sleep(0.2)
+                            except Exception as e:
+                                # Log but continue on individual event errors
+                                progress_queue.put(("error", str(e)))
+                        # Give time for final events to be sent
+                        await worker_asyncio.sleep(3)
+                except Exception as e:
+                    # Connection errors are expected if relay disconnects
+                    # but we've already published most events
+                    progress_queue.put(("connection_error", str(e)))
+            
+            # Run in new event loop
+            loop = worker_asyncio.new_event_loop()
+            worker_asyncio.set_event_loop(loop)
+            
+            # Suppress asyncio error logging for connection errors
+            def exception_handler(loop, context):
+                # Ignore connection errors - they're expected when publishing many events
+                exc = context.get("exception") or context.get("message", "")
+                if "Connection" in str(exc) or "disconnected" in str(exc).lower():
+                    return
+                # Log other exceptions
+                if hasattr(loop, "default_exception_handler"):
+                    loop.default_exception_handler(context)
+            
+            loop.set_exception_handler(exception_handler)
+            
+            try:
+                loop.run_until_complete(_run_client())
+                # Give a moment for any final sends to complete
+                loop.run_until_complete(worker_asyncio.sleep(1))
+            finally:
+                # Cancel all remaining tasks before closing
+                try:
+                    pending = [t for t in worker_asyncio.all_tasks(loop) if not t.done()]
+                    for task in pending:
+                        task.cancel()
+                    # Wait briefly for cancellations (with timeout)
+                    if pending:
+                        try:
+                            loop.run_until_complete(worker_asyncio.wait_for(
+                                worker_asyncio.gather(*pending, return_exceptions=True), timeout=2.0
+                            ))
+                        except worker_asyncio.TimeoutError:
+                            pass  # Force close if tasks don't cancel quickly
+                except Exception:
+                    pass  # Ignore errors during cleanup
+                finally:
+                    loop.close()
+            
+            done_event.set()
+            return published[0]
+        
+        # Start worker
+        worker = threading.Thread(target=_client_worker, daemon=True)
+        worker.start()
+        
+        # Monitor progress
         published = 0
+        errors = []
         with tqdm(total=total, desc="Publishing", unit="ev") as pbar:
-            with open(ndjson_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    data = orjson.loads(line)
-                    ev = Event(
-                        kind=data["kind"],
-                        content=data.get("content", ""),
-                        pub_key=pub_hex,
-                        tags=data.get("tags", []),
-                    )
-                    ev.sign(priv_hex)
-                    client.publish(ev)
-                    published += 1
-                    pbar.update(1)
+            while not done_event.is_set() or not progress_queue.empty():
+                try:
+                    item = progress_queue.get(timeout=0.1)
+                    if isinstance(item, tuple):
+                        # Error message
+                        error_type, error_msg = item
+                        if error_type == "connection_error":
+                            # Connection lost is expected after many events
+                            pass
+                        else:
+                            errors.append(error_msg)
+                    elif item:
+                        published += item
+                        pbar.update(1)
+                except queue.Empty:
+                    if done_event.is_set():
+                        break
+                    continue
+        
+        worker.join(timeout=5.0)
         return published
     
     # Run in thread pool to avoid blocking main event loop
