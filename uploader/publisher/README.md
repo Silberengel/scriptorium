@@ -49,8 +49,15 @@ Step-by-step workflow
 
 4) Edit metadata and mappings
    - Open `@metadata.yml` and review:
-     - `title`, `author`, `language`, `collection_id`, `has_collection`
-     - `use_bookstr: true|false` (controls canonical name tags)
+     - Required fields: `title`, `author`, `publisher`
+     - Optional NKBIP-01 metadata fields:
+       - `published_on`: Publication date (e.g., "2003-05-13" or "1899")
+       - `published_by`: Publication source (e.g., "public domain")
+       - `summary`: Publication description
+       - `version`: Publication version (e.g., "KJV", "DRM", "3rd edition")
+       - `type`: Publication type (default: "book", can be "bible", "illustrated", "magazine", etc.)
+     - `language`, `collection_id`, `has_collection`
+     - `use_bookstr: true|false` (enables bookstr macro tags: `type`, `book`, `chapter`, `verse`, `version`)
      - Optional mappings (choose either or both):
        - Inline list:
          ```
@@ -74,20 +81,27 @@ Step-by-step workflow
          - ["t", "classical"]
          - ["source", "https://booksonline.org/"]
        ```
+       Note: Cover images must be hosted on a media server accessible to clients. Add the URL via the `image` tag in `additional_tags`.
 
 5) Generate final artifacts (AsciiDoc → indexes + events)
    - Re-run generate to apply metadata/mappings:
-     - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML [--ascii-only] [--unwrap-lines] [--unwrap-level N]`
+     - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML [--promote-default-structure] [--ascii-only] [--unwrap-lines] [--unwrap-level N]`
+   - Events are generated with NKBIP-01 compliant tags:
+     - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, plus any `additional_tags`
+     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true`)
+     - Section content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true`)
    - Outputs:
-     - `uploader/publisher/out/events/events.ndjson` (serialized events)
+     - `uploader/publisher/out/events/events.ndjson` (serialized events ready for publishing)
      - `uploader/publisher/out/cache/event_index.json` (quick index)
      - `uploader/publisher/out/adoc/normalized-publication.adoc`
 
-6) Publish to relay (no-op during dry run)
+6) Publish to relay
    - Set env: `SCRIPTORIUM_KEY` (nsec... or 64-hex; normalized automatically)
    - Optional env: `SCRIPTORIUM_RELAY` (default `wss://thecitadel.nostr1.com`)
    - Command:
      - `python -m uploader.publisher.cli publish`
+   - The publisher verifies that the first event is present on the relay after publishing.
+     Only reports success if verification passes.
 
 7) QC and republish missing
    - Command:
@@ -101,9 +115,9 @@ Step-by-step workflow
 Commands
 --------
 - init-metadata: infer and create @metadata.yml next to your source
-- generate: convert source → AsciiDoc and prepare artifacts
-- publish: publish events to relay (to be implemented next)
-- qc: verify presence on relay and republish missing (to be implemented next)
+- generate: convert source → AsciiDoc and generate NKBIP-01 compliant bookstr events
+- publish: publish events to relay with verification
+- qc: verify presence on relay and republish missing (placeholder)
 - all: run generate → publish → qc
 
 Environment

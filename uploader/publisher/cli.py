@@ -267,9 +267,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser(
         "generate",
         parents=[common],
-        help="Normalize to AsciiDoc, parse structure, and write serialized events (no publish)",
+        help="Normalize to AsciiDoc, parse structure, and write NKBIP-01 compliant events",
         description=(
             "Convert source to normalized AsciiDoc, parse Collection→Book→Chapter→Section, and write NDJSON events.\n"
+            "\n"
+            "Events are generated with NKBIP-01 compliant tags:\n"
+            "  - Collection root (kind 30040): title, author, publisher, published_on, published_by, summary, type\n"
+            "  - Book/Chapter indexes (kind 30040): type, book, chapter (if use_bookstr enabled)\n"
+            "  - Section content (kind 30041): type, book, chapter, verse (if use_bookstr enabled)\n"
+            "\n"
+            "Metadata is loaded from @metadata.yml in the input directory. Additional NKBIP-01 tags\n"
+            "can be specified via the 'additional_tags' field (e.g., image, ISBN, topics).\n"
             "\n"
             "Sanitization options:\n"
             "  --ascii-only     Transliterate to plain ASCII and drop non-ASCII\n"
@@ -311,8 +319,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser(
         "publish",
-        help="Publish events to the configured relay",
-        description="Publish previously generated events (NDJSON) to the relay using SCRIPTORIUM_KEY.",
+        help="Publish events to the configured relay with verification",
+        description=(
+            "Publish previously generated events (NDJSON) to the relay using SCRIPTORIUM_KEY.\n"
+            "\n"
+            "After publishing, verifies that the first event is present on the relay.\n"
+            "Only reports success if verification passes.\n"
+        ),
         formatter_class=RichHelpFormatter,
     )
     sp.set_defaults(func=_cmd_publish)
