@@ -124,6 +124,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         language=language,
         use_bookstr=use_bookstr,
         book_title_map=title_map,
+        metadata=md,
     )
     # Write events to NDJSON
     events_path = layout.events_dir / "events.ndjson"
@@ -158,7 +159,7 @@ def _cmd_publish(args: argparse.Namespace) -> int:
         return 1
     # Lazy import to avoid requiring monstr for generate-only runs
     from .nostr_client import publish_events_ndjson
-    asyncio.run(
+    verification = asyncio.run(
         publish_events_ndjson(
             cfg.relay_url,
             cfg.secret_key_hex,
@@ -166,8 +167,13 @@ def _cmd_publish(args: argparse.Namespace) -> int:
             max_in_flight=cfg.max_batch,
         )
     )
-    print(f"Published events to {cfg.relay_url}")
-    return 0
+    if verification and verification.get("verified"):
+        print(f"Published events to {cfg.relay_url}")
+        return 0
+    else:
+        error_msg = verification.get("error", "Unknown error") if verification else "No verification performed"
+        print(f"Failed to publish events to {cfg.relay_url}: {error_msg}", file=sys.stderr)
+        return 1
 
 
 def _cmd_qc(args: argparse.Namespace) -> int:

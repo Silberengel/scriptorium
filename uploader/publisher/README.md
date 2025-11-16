@@ -21,7 +21,6 @@ Step-by-step workflow
 1) Prepare input folder
    - Create a folder: `uploader/input_data/{collection_slug}/`
    - Add your source file as `publication.html` (or `publication.adoc`)
-   - Optionally add `cover-image.jpg` (or .png/.webp) and an `assets/` folder
 
 2) Clean/normalize the source (HTML → normalized AsciiDoc)
    - HTML: invisible chars stripped, basic headings/paragraphs mapped
@@ -66,6 +65,15 @@ Step-by-step workflow
          book_title_mapping_file: book_title_map.yml
          ```
          If using `book_title_mapping_file`, create that YAML with a list of `{display, canonical}` pairs.
+     - Optional additional NKBIP-01 tags (e.g., for cover image, ISBN, topics):
+       ```
+       additional_tags:
+         - ["image", "https://example.com/cover.jpg"]
+         - ["i", "isbn:9780765382030"]
+         - ["t", "fables"]
+         - ["t", "classical"]
+         - ["source", "https://booksonline.org/"]
+       ```
 
 5) Generate final artifacts (AsciiDoc → indexes + events)
    - Re-run generate to apply metadata/mappings:
@@ -108,7 +116,7 @@ Environment
 Example
 -------
 - Prepare input folder: uploader/input_data/DRM-Bible/
-- Put publication.html (or publication.adoc), optional cover-image.jpg
+- Put publication.html (or publication.adoc)
 - Generate metadata draft:
   python -m uploader.publisher.cli init-metadata --input uploader/input_data/DRM-Bible/publication.html --has-collection
 - Generate artifacts:

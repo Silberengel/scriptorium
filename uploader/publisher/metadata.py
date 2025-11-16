@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 import yaml
@@ -10,13 +10,19 @@ class Metadata:
     title: str
     author: str
     publisher: str
-    year: str
-    language: str
-    collection_id: str
-    has_collection: bool
-    use_bookstr: bool
-    book_title_mapping_file: Optional[str]
-    wikistr_mappings: List[Dict[str, str]]
+    # Fields with defaults must come after fields without defaults
+    language: str = "en"
+    collection_id: str = ""
+    has_collection: bool = True
+    use_bookstr: bool = True
+    book_title_mapping_file: Optional[str] = None
+    wikistr_mappings: List[Dict[str, str]] = field(default_factory=list)
+    type: str = "book"  # Publication type (default: "book")
+    published_on: Optional[str] = None  # Publication date (e.g., "2003-05-13" or "1899")
+    published_by: Optional[str] = None  # Publication source (e.g., "public domain")
+    summary: Optional[str] = None  # Publication summary/description
+    version: Optional[str] = None  # Publication version (e.g., "KJV", "DRM", "3rd edition")
+    additional_tags: List[List[str]] = field(default_factory=list)  # Additional NKBIP-01 tags (e.g., [["i", "isbn:..."], ["t", "fables"]])
 
 
 def load_metadata(base_dir: Path) -> Optional[Metadata]:
@@ -28,17 +34,24 @@ def load_metadata(base_dir: Path) -> Optional[Metadata]:
     def _get(key: str, default: Any = "") -> Any:
         return data.get(key, default)
 
+    # Support both "year" (legacy) and "published_on" (NKBIP-01)
+    published_on_val = _get("published_on") or _get("year")
     return Metadata(
         title=str(_get("title", "")),
         author=str(_get("author", "")),
         publisher=str(_get("publisher", "")),
-        year=str(_get("year", "")),
         language=str(_get("language", "en")),
         collection_id=str(_get("collection_id", base_dir.name)),
         has_collection=bool(_get("has_collection", True)),
         use_bookstr=bool(_get("use_bookstr", True)),
         book_title_mapping_file=_get("book_title_mapping_file"),
         wikistr_mappings=list(_get("wikistr_mappings", [])),
+        type=str(_get("type", "book")),  # Default to "book"
+        published_on=str(published_on_val) if published_on_val else None,
+        published_by=_get("published_by"),  # Optional published_by
+        summary=_get("summary") or _get("description"),  # Support both "summary" (NKBIP-01) and "description" (legacy)
+        version=_get("version"),  # Optional version
+        additional_tags=_get("additional_tags", []),  # Additional tags as list of lists
     )
 
 
