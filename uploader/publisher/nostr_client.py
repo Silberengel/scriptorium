@@ -38,14 +38,13 @@ def _sign_event(event_json: Dict[str, Any], privkey_hex: str) -> str:
         event_json["content"]
     ], separators=(',', ':'), ensure_ascii=False)
     
-    # Hash and sign with ECDSA
+    # Hash and sign with Schnorr (Nostr uses Schnorr signatures, not ECDSA)
     message_hash = hashlib.sha256(message.encode('utf-8')).digest()
     privkey_bytes = bytes.fromhex(privkey_hex)
     privkey = secp256k1.PrivateKey(privkey_bytes, raw=True)
-    sig = privkey.ecdsa_sign(message_hash, raw=True)
-    # Serialize signature as 64-byte (r, s) format
-    sig_der = privkey.ecdsa_serialize_compact(sig)
-    return sig_der.hex()
+    # Nostr uses Schnorr signatures (64 bytes = 128 hex chars)
+    sig = privkey.schnorr_sign(message_hash, None, raw=True)
+    return sig.hex()
 
 
 def _compute_event_id(event_json: Dict[str, Any]) -> str:
@@ -201,8 +200,25 @@ async def publish_events_ndjson(
                         continue
                 
                 # Give time for all events to be sent and OK responses to arrive
-                print(f"\nWaiting for relay responses...")
-                await asyncio.sleep(5)
+                # Many relays are slow to respond, especially with large batches
+                await progress_queue.put("waiting")
+                
+                # Wait longer for OK responses - relays can be slow with large batches
+                # Check periodically if we're still getting responses
+                wait_time = 0
+                max_wait = 30  # Wait up to 30 seconds for responses
+                last_response_count = 0
+                while wait_time < max_wait:
+                    await asyncio.sleep(2)
+                    wait_time += 2
+                    # Check if we got new responses
+                    current_responses = sum(1 for f in pending_oks.values() if f.done())
+                    if current_responses > last_response_count:
+                        last_response_count = current_responses
+                        # Still getting responses, wait more
+                    elif wait_time >= 10 and current_responses == last_response_count:
+                        # No new responses for a while, probably done
+                        break
                 
                 # Check for rejected events (those that got OK with accepted=False)
                 # We don't wait for all OKs, but check what we got
@@ -253,6 +269,7 @@ async def publish_events_ndjson(
         
         # Update progress bar as events are published
         connection_established = False
+        waiting_shown = False
         while not publish_task.done() or not progress_queue.empty():
             try:
                 item = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
@@ -260,6 +277,10 @@ async def publish_events_ndjson(
                     if not connection_established:
                         connection_established = True
                         print(f"\nConnected to relay, starting publish...")
+                elif item == "waiting":
+                    if not waiting_shown:
+                        waiting_shown = True
+                        print(f"\nWaiting for relay responses...")
                 elif item == 1:
                     pbar.update(1)
             except asyncio.TimeoutError:
@@ -268,15 +289,20 @@ async def publish_events_ndjson(
                     break
                 continue
         
-        # Wait for completion and drain any remaining items
+        # Wait for completion
         await publish_task
+        
+        # Drain any remaining progress items (but don't update bar multiple times)
+        remaining = 0
         while not progress_queue.empty():
             try:
                 item = progress_queue.get_nowait()
                 if item == 1:
-                    pbar.update(1)
+                    remaining += 1
             except asyncio.QueueEmpty:
                 break
+        if remaining > 0:
+            pbar.update(remaining)
     
     if errors:
         print(f"\nWARNING: {len(errors)} errors occurred during publishing.")
