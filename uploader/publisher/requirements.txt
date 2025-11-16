@@ -1,4 +1,4 @@
-monstr>=0.3.8
+monstr==0.1.9
 beautifulsoup4>=4.12.3
 lxml>=5.2.1
 regex>=2024.9.11

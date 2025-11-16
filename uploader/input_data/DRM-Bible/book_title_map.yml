@@ -1,0 +1,153 @@
+# DRB display names → canonical wikistr/bookstr names
+# Extend as needed. This is a starter set to validate mapping works.
+
+- display: Genesis
+  canonical: Genesis
+- display: Exodus
+  canonical: Exodus
+- display: Leviticus
+  canonical: Leviticus
+- display: Numbers
+  canonical: Numbers
+- display: Deuteronomy
+  canonical: Deuteronomy
+- display: Josue
+  canonical: Joshua
+- display: Judges
+  canonical: Judges
+- display: Ruth
+  canonical: Ruth
+- display: 1 Kings
+  canonical: 1 Samuel
+- display: 2 Kings
+  canonical: 2 Samuel
+- display: 3 Kings
+  canonical: 1 Kings
+- display: 4 Kings
+  canonical: 2 Kings
+- display: 1 Paralipomenon
+  canonical: 1 Chronicles
+- display: 2 Paralipomenon
+  canonical: 2 Chronicles
+- display: Esdras
+  canonical: Ezra
+- display: Nehemias
+  canonical: Nehemiah
+- display: Tobias
+  canonical: Tobit
+- display: Judith
+  canonical: Judith
+- display: Esther
+  canonical: Esther
+- display: Job
+  canonical: Job
+- display: Psalms
+  canonical: Psalms
+- display: Proverbs
+  canonical: Proverbs
+- display: Ecclesiastes
+  canonical: Ecclesiastes
+- display: Canticle of Canticles
+  canonical: Song of Songs
+- display: Wisdom
+  canonical: Wisdom
+- display: Ecclesiasticus
+  canonical: Sirach
+- display: Isaias
+  canonical: Isaiah
+- display: Jeremias
+  canonical: Jeremiah
+- display: Lamentations
+  canonical: Lamentations
+- display: Baruch
+  canonical: Baruch
+- display: Ezechiel
+  canonical: Ezekiel
+- display: Daniel
+  canonical: Daniel
+- display: Osee
+  canonical: Hosea
+- display: Joel
+  canonical: Joel
+- display: Amos
+  canonical: Amos
+- display: Abdias
+  canonical: Obadiah
+- display: Jonas
+  canonical: Jonah
+- display: Micheas
+  canonical: Micah
+- display: Nahum
+  canonical: Nahum
+- display: Habacuc
+  canonical: Habakkuk
+- display: Sophonias
+  canonical: Zephaniah
+- display: Aggeus
+  canonical: Haggai
+- display: Zacharias
+  canonical: Zechariah
+- display: Malachias
+  canonical: Malachi
+- display: 1 Machabees
+  canonical: 1 Maccabees
+- display: 2 Machabees
+  canonical: 2 Maccabees
+
+# New Testament (sample canonicalization)
+- display: The Holy Gospel of Jesus Christ, according to St. Matthew
+  canonical: Matthew
+- display: The Holy Gospel of Jesus Christ, according to St. Mark
+  canonical: Mark
+- display: The Holy Gospel of Jesus Christ, according to St. Luke
+  canonical: Luke
+- display: The Holy Gospel of Jesus Christ, according to St. John
+  canonical: John
+- display: The Acts of the Apostles
+  canonical: Acts
+- display: The Epistle of St. Paul the Apostle to the Romans
+  canonical: Romans
+- display: The First Epistle of St. Paul to the Corinthians
+  canonical: 1 Corinthians
+- display: The Second Epistle of St. Paul to the Corinthians
+  canonical: 2 Corinthians
+- display: The Epistle of St. Paul to the Galatians
+  canonical: Galatians
+- display: The Epistle of St. Paul to the Ephesians
+  canonical: Ephesians
+- display: The Epistle of St. Paul to the Philippians
+  canonical: Philippians
+- display: The Epistle of St. Paul to the Colossians
+  canonical: Colossians
+- display: The First Epistle of St. Paul to the Thessalonians
+  canonical: 1 Thessalonians
+- display: The Second Epistle of St. Paul to the Thessalonians
+  canonical: 2 Thessalonians
+- display: The First Epistle of St. Paul to Timothy
+  canonical: 1 Timothy
+- display: The Second Epistle of St. Paul to Timothy
+  canonical: 2 Timothy
+- display: The Epistle of St. Paul to Titus
+  canonical: Titus
+- display: The Epistle of St. Paul to Philemon
+  canonical: Philemon
+- display: The Epistle of St. Paul to the Hebrews
+  canonical: Hebrews
+- display: The Catholic Epistle of St. James the Apostle
+  canonical: James
+- display: The First Epistle of St. Peter the Apostle
+  canonical: 1 Peter
+- display: The Second Epistle of St. Peter the Apostle
+  canonical: 2 Peter
+- display: The First Epistle of St. John the Apostle
+  canonical: 1 John
+- display: The Second Epistle of St. John the Apostle
+  canonical: 2 John
+- display: The Third Epistle of St. John the Apostle
+  canonical: 3 John
+- display: The Epistle of St. Jude the Apostle
+  canonical: Jude
+- display: The Apocalypse of St. John the Apostle
+  canonical: Revelation
+
+

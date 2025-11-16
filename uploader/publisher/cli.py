@@ -9,11 +9,25 @@ from .adapters.adoc_identity import normalize_adoc
 from .metadata_wizard import draft_metadata_from_document, write_metadata_yaml
 from .parse_collection import parse_adoc_structure
 from .nkbip_bookstr import serialize_bookstr
-from .nostr_client import publish_events_ndjson
 import asyncio
 import json
 from .metadata import load_metadata, load_title_mapping
 
+
+class HelpOnErrorArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        print("", file=sys.stderr)
+        self.print_usage(sys.stderr)
+        self.exit(2, f"\nerror: {message}\n\nUse -h or --help for detailed usage.\n\n")
+    def print_help(self, file=None):
+        if file is None:
+            file = sys.stdout
+        print("", file=file)
+        super().print_help(file)
+        print("", file=file)
+
+class RichHelpFormatter(argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
+    pass
 
 def _cmd_init_metadata(args: argparse.Namespace) -> int:
     cfg = load_config()
@@ -104,6 +118,8 @@ def _cmd_publish(args: argparse.Namespace) -> int:
     if not events_path.exists():
         print(f"No events found at {events_path}", file=sys.stderr)
         return 1
+    # Lazy import to avoid requiring monstr for generate-only runs
+    from .nostr_client import publish_events_ndjson
     asyncio.run(
         publish_events_ndjson(
             cfg.relay_url,
@@ -113,7 +129,7 @@ def _cmd_publish(args: argparse.Namespace) -> int:
         )
     )
     print(f"Published events to {cfg.relay_url}")
-    return 0*** End Patch*** }```">
+    return 0
 
 
 def _cmd_qc(args: argparse.Namespace) -> int:
@@ -135,28 +151,103 @@ def _cmd_all(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="publisher", description="Nostr Bookstr Publisher")
+    epilog = (
+        "Examples:\n"
+        "  publisher init-metadata \\\n"
+        "    --input uploader/input_data/DRM-Bible/publication.html \\\n"
+        "    --has-collection\n"
+        "\n"
+        "  publisher generate \\\n"
+        "    --input uploader/input_data/DRM-Bible/publication.html \\\n"
+        "    --source-type HTML\n"
+        "\n"
+        "  publisher publish\n"
+        "  publisher qc\n"
+        "\n"
+        "  publisher all \\\n"
+        "    --input uploader/input_data/DRM-Bible/publication.html \\\n"
+        "    --source-type HTML\n"
+        "\n"
+        "Environment:\n"
+        "  SCRIPTORIUM_KEY    nsec... or 64-hex (lowercased automatically)\n"
+        "  SCRIPTORIUM_RELAY  Relay URL (default wss://thecitadel.nostr1.com)\n"
+        "  SCRIPTORIUM_SOURCE Source type default (HTML)\n"
+        "  SCRIPTORIUM_OUT    Output dir (default uploader/publisher/out)\n"
+    )
+    welcome = (
+        "Welcome to the Scriptorium Uploader (Nostr bookstr)\n"
+        "----------------------------------------------------\n"
+        "Convert sources to AsciiDoc, scaffold metadata, generate hierarchical bookstr events,\n"
+        "publish to your relay, and verify via QC.\n"
+    )
+    p = HelpOnErrorArgumentParser(
+        prog="publisher",
+        description=f"{welcome}",
+        epilog=epilog,
+        formatter_class=RichHelpFormatter,
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--input", required=True, help="Path to input source file (e.g., publication.html)")
-    common.add_argument("--source-type", default="HTML", help="HTML|ADOC|MARKDOWN|RTF|EPUB")
+    # Add extra help aliases for convenience
+    p.add_argument("-help", "--h", action="help", help="Show this help message and exit")
 
-    sp = sub.add_parser("init-metadata", parents=[common], help="Generate @metadata.yml from source")
-    sp.add_argument("--has-collection", action="store_true", help="Indicate the source has a collection level")
+    common = argparse.ArgumentParser(add_help=False, formatter_class=RichHelpFormatter)
+    common.add_argument(
+        "--input",
+        required=True,
+        help="Path to input source file (e.g., publication.html or publication.adoc)",
+        metavar="PATH",
+    )
+    common.add_argument(
+        "--source-type",
+        default="HTML",
+        help="Source type: HTML | ADOC | MARKDOWN | RTF | EPUB (HTML/ADOC implemented)",
+        choices=["HTML", "ADOC", "MARKDOWN", "RTF", "EPUB"],
+    )
+
+    sp = sub.add_parser(
+        "init-metadata",
+        parents=[common],
+        help="Generate @metadata.yml from the source without publishing",
+        description="Infer a starter @metadata.yml (title/author/language, collection flags). You can edit it before generation.",
+        formatter_class=RichHelpFormatter,
+    )
+    sp.add_argument("--has-collection", action="store_true", help="Indicate the source has a collection (top-level) index")
     sp.set_defaults(func=_cmd_init_metadata)
 
-    sp = sub.add_parser("generate", parents=[common], help="Generate events without publishing")
-    sp.add_argument("--has-collection", action="store_true", help="Indicate the source has a collection level")
+    sp = sub.add_parser(
+        "generate",
+        parents=[common],
+        help="Normalize to AsciiDoc, parse structure, and write serialized events (no publish)",
+        description="Convert source to normalized AsciiDoc, parse Collection→Book→Chapter→Section, and write NDJSON events.",
+        formatter_class=RichHelpFormatter,
+    )
+    sp.add_argument("--has-collection", action="store_true", help="Indicate the source has a collection (top-level) index")
     sp.set_defaults(func=_cmd_generate)
 
-    sp = sub.add_parser("publish", help="Publish events to relay")
+    sp = sub.add_parser(
+        "publish",
+        help="Publish events to the configured relay",
+        description="Publish previously generated events (NDJSON) to the relay using SCRIPTORIUM_KEY.",
+        formatter_class=RichHelpFormatter,
+    )
     sp.set_defaults(func=_cmd_publish)
 
-    sp = sub.add_parser("qc", help="Quality control: verify and republish missing")
+    sp = sub.add_parser(
+        "qc",
+        help="Quality control: verify presence on relay and republish missing",
+        description="Read back events by kind+d+author and republish any missing or mismatched content.",
+        formatter_class=RichHelpFormatter,
+    )
     sp.set_defaults(func=_cmd_qc)
 
-    sp = sub.add_parser("all", parents=[common], help="Run generate→publish→qc")
+    sp = sub.add_parser(
+        "all",
+        parents=[common],
+        help="Run generate → publish → qc in sequence",
+        description="One-swoop mode: generate events from source, publish them, and run QC.",
+        formatter_class=RichHelpFormatter,
+    )
     sp.set_defaults(func=_cmd_all)
 
     return p
@@ -164,6 +255,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     parser = build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
+    # Show help when no args supplied
+    if not argv:
+        print("", file=sys.stderr)
+        parser.print_help(sys.stderr)
+        print("", file=sys.stderr)
+        return 2
     args = parser.parse_args(argv)
     return args.func(args)
 
