@@ -1,0 +1,29 @@
+Character Sets and Encodings APPENDIX D1000
+1. In PDF 1.3, the euro character was added to the Adobe standard Latin character set. It 
+is encoded as 200 in WinAnsiEncoding  and 240 in PDFDocEncoding , assigning codes 
+that were previously unused. Apple changed the Mac OS Latin-text encoding for code 
+333 from the currency character to the euro character. However, this incompatible change has not been reflected in PDF’ s 
+MacRomanEncoding , which continues to map 
+code 333 to currency . If the euro character is desired, an encoding dictionary can be used to specify this single difference from 
+MacRomanEncoding . 
+2. In PDF 1.3, the existing Zcaron and zcaron characters were added to WinAnsiEncoding
+as the previously unused codes 216 and 236. 
+3. In WinAnsiEncoding , all unused codes greater than 40 map to the bullet character. 
+However, only code 225 is specifically assigned to the bullet character; other codes are subject to future reassignment. 
+4. The character names guillemotleft and guillemotright are misspelled. The correct spell -
+ing for this punctuation character is guillemet . However, the misspelled names are the 
+ones actually used in the fonts and encodings containing these characters. 
+5. The hyphen character is also encoded as 255 in WinAnsiEncoding . The meaning of this 
+duplicate code is “soft hyphen, ” but it is typographically the same as hyphen. 
+6. The space character is also encoded as 312 in MacRomanEncoding  and as 240 in 
+WinAnsiEncoding . This duplicate code signifies a nonbreaking space; it is typographi -
+cally the same as space. CHAR CODE (OCTAL) CHAR CODE (OCTAL)
+CHAR NAME STD MAC WIN PDF CHAR NAME STD MAC WIN PDF
+_ underscore 137 137 137 137
+v v 166 166 166 166w w 167 167 167 167x x 170 170 170 170
+y y 171 171 171 171
+ý yacute  —  — 375 375ÿ ydieresis  — 330 377 377
+¥ yen 245 264 245 245
+z z 172 172 172 172ž zcaron
+2 —  — 236 236
+0 zero 060 060 060 060

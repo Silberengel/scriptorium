@@ -1,0 +1,12 @@
+monstr>=0.3.8
+beautifulsoup4>=4.12.3
+lxml>=5.2.1
+regex>=2024.9.11
+orjson>=3.10.7
+tqdm>=4.66.5
+anyio>=4.4.0
+uvloop>=0.20.0; sys_platform == "linux"
+bech32>=1.2.0
+pyyaml>=6.0.2
+
+

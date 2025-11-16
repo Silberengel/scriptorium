@@ -1,0 +1,343 @@
+I'll create a simple Python script to parse a PDF file and convert its content to an AsciiDoc format. This example uses the PyPDF2 library to extract text from the PDF and then creates a basic AsciiDoc file from that content.
+
+```python
+import os
+import PyPDF2
+import re
+
+def pdf_to_asciidoc(pdf_path, output_path=None):
+    """
+    Convert a PDF file to an AsciiDoc file.
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+        output_path (str, optional): Path for the output AsciiDoc file. 
+                                     If None, uses the PDF name with .adoc extension
+    
+    Returns:
+        str: Path to the created AsciiDoc file
+    """
+    # Set the output path if not provided
+    if output_path is None:
+        base_name = os.path.splitext(pdf_path)[0]
+        output_path = f"{base_name}.adoc"
+    
+    # Extract text from the PDF
+    text = extract_text_from_pdf(pdf_path)
+    
+    # Clean up the text for AsciiDoc format
+    cleaned_text = clean_text_for_asciidoc(text)
+    
+    # Write to AsciiDoc file
+    with open(output_path, 'w', encoding='utf-8') as adoc_file:
+        # Add a basic AsciiDoc header
+        adoc_file.write(f"= {os.path.basename(os.path.splitext(pdf_path)[0])}\n")
+        adoc_file.write(":doctype: book\n")
+        adoc_file.write(":toc: left\n")
+        adoc_file.write(":toclevels: 3\n\n")
+        
+        # Write the content
+        adoc_file.write(cleaned_text)
+    
+    return output_path
+
+def extract_text_from_pdf(pdf_path):
+    """Extract text from all pages of a PDF file"""
+    text = ""
+    
+    with open(pdf_path, 'rb') as file:
+        pdf_reader = PyPDF2.PdfReader(file)
+        
+        # Extract text from each page
+        for page_num in range(len(pdf_reader.pages)):
+            page = pdf_reader.pages[page_num]
+            text += page.extract_text() + "\n"
+    
+    return text
+
+def clean_text_for_asciidoc(text):
+    """Clean the extracted text for AsciiDoc format"""
+    # Remove multiple spaces
+    text = re.sub(r' +', ' ', text)
+    
+    # Remove multiple newlines (preserve paragraphs)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Try to identify headings (this is a simple heuristic)
+    lines = text.split('\n')
+    result = []
+    
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        
+        # Simple heuristic: short lines that don't end with punctuation 
+        # and are followed by blank lines might be headings
+        if (len(stripped) > 0 and len(stripped) < 80 and 
+            not stripped[-1] in '.,:;?!' and 
+            (i == len(lines)-1 or not lines[i+1].strip())):
+            # Mark as heading level 2
+            if stripped.isupper():  # Likely a chapter heading
+                result.append(f"== {stripped.title()}")
+            else:
+                result.append(f"=== {stripped}")
+        else:
+            result.append(line)
+            
+    return '\n'.join(result)
+
+if __name__ == "__main__":
+    # Example usage
+    pdf_file = "example.pdf"
+    output_file = pdf_to_asciidoc(pdf_file)
+    print(f"AsciiDoc file created: {output_file}")
+
+```
+
+To use this script, you'll need to install the PyPDF2 library:
+
+```bash
+pip install PyPDF2
+```
+
+This code:
+
+1. Extracts all text from the PDF using PyPDF2
+2. Performs basic text cleanup to make it suitable for AsciiDoc format
+3. Attempts to identify possible headings using simple heuristics
+4. Creates an AsciiDoc file with basic document structure
+
+The script has some limitations:
+
+- It might not perfectly detect heading structures
+- It doesn't handle complex PDF layouts well
+- Images, tables, and other non-text elements are not preserved
+- Formatting like bold, italic, etc. won't be detected
+
+For more advanced parsing, you might want to look into tools like `pdfminer.six` which can offer better text extraction capabilities, or `pdf2htmlEX` for more accurate formatting preservation.
+
+Would you like me to explain any specific part of this code in more detail?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+If you want to parse a PDF file bytewise in Python while focusing on performance, that's a more specialized approach. While Python can handle this task, for maximum performance you might consider Rust or C, especially for large files. However, Python can still be reasonably efficient with the right techniques.
+
+Here's an implementation in Python that parses PDF content streams bytewise, focusing on text extraction from TJ and Tj operators:
+
+```python
+import re
+import time
+import mmap
+from io import BytesIO
+import zlib
+
+class PDFBytewiseParser:
+    def __init__(self, pdf_path):
+        self.pdf_path = pdf_path
+        self.current_object = bytearray()
+        self.extracted_text = []
+        self.in_content_stream = False
+        self.font_map = {}  # To store font encoding information if needed
+
+    def parse(self):
+        """Parse the PDF file bytewise and extract text from TJ and Tj operators"""
+        start_time = time.time()
+        
+        # Use memory mapping for efficient file access
+        with open(self.pdf_path, 'rb') as f:
+            # Memory-map the file for faster access
+            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                i = 0
+                length = len(mm)
+                
+                while i < length:
+                    # Look for content stream markers
+                    if i + 9 < length and mm[i:i+9] == b'stream\r\n' or mm[i:i+7] == b'stream\n':
+                        # Handle the stream start
+                        stream_start = i + (9 if mm[i:i+9] == b'stream\r\n' else 7)
+                        # Find the end of the stream
+                        endstream_pos = mm.find(b'endstream', stream_start)
+                        if endstream_pos != -1:
+                            # Extract and process the stream content
+                            stream_content = mm[stream_start:endstream_pos]
+                            try:
+                                # Try to decompress (assuming it might be compressed)
+                                decompressed = zlib.decompress(stream_content)
+                                self.process_content_stream(decompressed)
+                            except zlib.error:
+                                # If decompression fails, it might be an uncompressed stream
+                                self.process_content_stream(stream_content)
+                            
+                            # Skip to after endstream
+                            i = endstream_pos + 10
+                            continue
+                    
+                    # If we're not processing a stream, just move forward
+                    i += 1
+        
+        end_time = time.time()
+        print(f"Parsing completed in {end_time - start_time:.2f} seconds")
+        return ''.join(self.extracted_text)
+
+    def process_content_stream(self, content):
+        """Process a content stream to extract text"""
+        # Create a memory buffer for efficient processing
+        buffer = BytesIO(content)
+        data = buffer.read()
+        
+        # Use regex to find TJ and Tj operators and their arguments
+        # This is more efficient than byte-by-byte processing
+        
+        # Find TJ operations - array of strings: [(...)Tj]
+        tj_pattern = re.compile(rb'\[(.*?)\]\s*TJ')
+        for match in tj_pattern.finditer(data):
+            array_content = match.group(1)
+            # Extract text parts from the array
+            text_parts = re.findall(rb'[(](.*?)[)]', array_content)
+            for text_part in text_parts:
+                decoded_text = self.decode_pdf_string(text_part)
+                if decoded_text.strip():
+                    self.extracted_text.append(decoded_text)
+            
+            # Add space between TJ operations as they often represent words
+            if self.extracted_text and self.extracted_text[-1] != ' ':
+                self.extracted_text.append(' ')
+        
+        # Find Tj operations - single string: (...)Tj
+        tj_single_pattern = re.compile(rb'[(](.*?)[)]\s*Tj')
+        for match in tj_single_pattern.finditer(data):
+            text = match.group(1)
+            decoded_text = self.decode_pdf_string(text)
+            if decoded_text.strip():
+                self.extracted_text.append(decoded_text)
+                # Add space after each Tj operation
+                self.extracted_text.append(' ')
+
+    def decode_pdf_string(self, byte_string):
+        """Decode PDF string objects considering character encoding"""
+        # Basic decoding of PDF strings
+        result = ""
+        i = 0
+        length = len(byte_string)
+        
+        while i < length:
+            if byte_string[i:i+1] == b'\\':
+                # Handle escape sequences
+                if i + 1 < length:
+                    next_char = byte_string[i+1:i+2]
+                    if next_char == b'n':
+                        result += '\n'
+                    elif next_char == b'r':
+                        result += '\r'
+                    elif next_char == b't':
+                        result += '\t'
+                    elif next_char == b'b':
+                        result += '\b'
+                    elif next_char == b'f':
+                        result += '\f'
+                    elif next_char == b'(':
+                        result += '('
+                    elif next_char == b')':
+                        result += ')'
+                    elif next_char == b'\\':
+                        result += '\\'
+                    elif next_char in b'0123':
+                        # Octal character code
+                        if i + 3 < length and byte_string[i+1:i+4].isdigit():
+                            char_code = int(byte_string[i+1:i+4], 8)
+                            result += chr(char_code)
+                            i += 3
+                        else:
+                            result += '\\'
+                    else:
+                        result += '\\'
+                    i += 2
+                    continue
+            
+            # Regular character
+            try:
+                # Try UTF-8 first
+                result += byte_string[i:i+1].decode('utf-8')
+            except UnicodeDecodeError:
+                # Fall back to latin-1 which can decode any byte
+                result += byte_string[i:i+1].decode('latin-1')
+            i += 1
+                
+        return result
+
+    def convert_to_asciidoc(self, output_path=None):
+        """Convert the extracted text to an AsciiDoc file"""
+        if output_path is None:
+            output_path = self.pdf_path.rsplit('.', 1)[0] + '.adoc'
+        
+        text = ''.join(self.extracted_text)
+        
+        # Basic text cleanup for AsciiDoc
+        # Remove excessive whitespace
+        text = re.sub(r'\s+', ' ', text)
+        # Split into paragraphs based on empty lines or significant spacing
+        paragraphs = re.split(r'\n\s*\n', text)
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            # Add AsciiDoc header
+            f.write(f"= {self.pdf_path.rsplit('/', 1)[-1].rsplit('.', 1)[0]}\n")
+            f.write(":doctype: book\n")
+            f.write(":toc: left\n\n")
+            
+            # Write paragraphs
+            for paragraph in paragraphs:
+                if paragraph.strip():
+                    f.write(paragraph.strip() + "\n\n")
+        
+        return output_path
+
+# Example usage
+if __name__ == "__main__":
+    parser = PDFBytewiseParser("example.pdf")
+    text = parser.parse()
+    asciidoc_file = parser.convert_to_asciidoc()
+    print(f"Extracted {len(text)} characters of text")
+    print(f"AsciiDoc file created: {asciidoc_file}")
+
+```
+
+This Python implementation offers several performance optimizations:
+
+1. **Memory mapping** (`mmap`): Provides efficient file access without loading the entire file into memory
+2. **BytesIO**: Uses in-memory binary buffers for faster byte manipulation
+3. **Regular expressions**: Optimized pattern matching instead of character-by-character processing
+4. **Batch processing**: Handles chunks of data rather than individual bytes
+
+### Performance considerations:
+
+1. **Python vs. Rust/C**:
+   - For files under a few hundred MB, this Python solution should be reasonably fast
+   - For GB-sized files or production-level performance, Rust or C would be better
+
+2. **Further Python optimizations**:
+   - Use `numpy` for even more efficient byte operations
+   - Consider PyPy for faster execution
+   - Implement multiprocessing to handle multiple content streams in parallel
+
+3. **Using Rust**:
+   If you decide Python isn't fast enough, you could:
+   - Create a Rust library and call it from Python using PyO3
+   - Process the most performance-critical parts in Rust while keeping the convenience of Python
+
+4. **Existing C libraries**:
+   - Consider using `pikepdf` (Python wrapper for QPDF C++ library)
+   - Or `pdfium-bindings` (Google's PDF rendering engine)
+
+Would you like me to focus on any specific aspect of this implementation or provide guidance on integrating with Rust for even better performance?

@@ -1,0 +1,31 @@
+= Issues for the pdf - asciidoc converter
+Goldengel
+:description: This document describes the issues when converting a pdf file into asciidoc with the alexandria project in focus
+
+== Document Layout
+
+. Pages to flowtext
++
+All referenence to pages won't be valid anymore. Best to replace them with a reference to the specific section. But the page may contain serveral start of sections (headings) and it is not obvious which one is exactly referenced. Also with pictures where here we usually have a seperate numbering
+
+. Decoding
++
+With latin-1 many i are replaced by \x1f. And there are others. Either find the right decoder/encoder or replace the characters.
+
+== Images
+
+. Images storage
++
+Pdf documents are self contained. In Asciidoc images are stored separtely. 
+
+=== Images with overlays
+. Sub section titles with text overlay as section introduction
++
+Images (e.g. sub-title pages) may contain a background image with textboxes overlay containing the headline, (sub-) table of contents or short summaries. This has to be detected and handled correctly. Headline and summary has to be pulled into the text flow. Toc has to be converted to point to sections and maybe pulled out as well. But shall they still be displayed in the picutre. Or shall a empty background picture be added.
+
+.Images like graphs may have also describing texts as overlay. 
++
+In these cases the texts are tied to the picture and to the specific location. They shall not be added to the flow text. But also here is a mix possible where some comment is within the picuture and some text notations as well. The comment may be extracted. 
+
+
+

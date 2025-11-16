@@ -1,0 +1,49 @@
+# some metadata for the collection or book (top-level, as applicable)
+title: "Douay-Rheims Bible"
+author: "Challoner"
+publisher: "Catholic Truth Society"
+year: 1899
+language: "la"
+
+# Delete the lowest section that you don't need. (e.g. tertiary_metadata if you don't have verses).
+
+# some metadata for the books or chapters (second-level, as applicable)
+secondary_metadata:
+  - title: "Genesis"
+    author: "Challoner"
+    publisher: "Catholic Truth Society"
+    year: 1899
+    language: "la"
+  - title: "Exodus"
+    author: "Challoner"
+    publisher: "Catholic Truth Society"
+    year: 1899
+    language: "la"
+  - title: "Leviticus"
+    author: "Challoner"
+    publisher: "Catholic Truth Society"
+    year: 1899
+    language: "la"
+  - title: "Numbers"
+    author: "Challoner"
+    publisher: "Catholic Truth Society"
+    year: 1899
+    language: "la"
+  - title: "Deuteronomy"
+    author: "Challoner"
+    publisher: "Catholic Truth Society"
+    year: 1899
+    language: "la"
+
+# some metadata for the chapters or verses (third-level, as applicable)
+tertiary_metadata:
+  - title: "Genesis 1:1"
+    author: "Challoner"
+    publisher: "Catholic Truth Society"
+    year: 1899
+    language: "la"
+  - title: "Genesis 1:2"
+    author: "Challoner"
+    publisher: "Catholic Truth Society"
+    year: 1899
+    language: "la"

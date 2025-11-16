@@ -1,0 +1,45 @@
+= Anchor Event 
+
+== Abstract
+An anchor event connects any valid nostr event (float) to a position or a area of a content stream of another base event (ground)
+
+== Goal
+Use an abstract binding element (anchor event) to avoid base information in a comment or picture layer object. This will have many benifits like:
+- being able to have layers of mixed elements, images and text, on a picture
+- being able to add a comment to a specific region (area) of a picture, e.g. reasoning to the top offender bar of a bar chart
+- being able to connect the same comment with different anchors
+- easier reaction to changes by only adapting the anchor element (e.g. pos+50 if pos<500) without having to change all the comments.
+- being able to connect an image (event) to several pictures (e.g. let the ostrich appear on every your pictures as watermark)
+
+== Examples
+
+
+== Types
+
+1D Position: One dimensional position value, e.g. Matrix [120] is the 120 character in the (uncompressed and unencrypted) character stream
+1D Area: One dimensional area
+2D Position: 2 dimensional position value (only valid on 2D sources like images, tables)
+2D Area: 2 dimensional area (only valid on 2D sources like images, tables)
+2D Polyline: polyline area (t.b.d.)
+
+
+== Detailed description
+The anchor event allows you to connect any other event to a base event. Depending on the kind of the base element (text, image, other) the matrix to define the area for the anchor is different. With no anchoring matrix the anchor refers to the complete event. The anchor position refers to the original raw stream without encryption or compression mechanism (e.g. png, jpg) applied.
+
+
+
+
+== Content
+{
+    ...
+    tags: [],
+    content: {
+        ground: <event key>
+        anchors:[
+            { type: <matrix|polyline>, matrix:[[345]], action:<mark|replace|insert>, marking:<highlight|underline|shade>, float: <event_key> },
+            { type: <matrix|polyline>, matrix:[[345, 379]], action:<mark|replace|insert>, marking:<highlight|underline|shade>, float: <event_key> },
+            { type: <matrix|polyline>, matrix:[[x1=200, x2=600][y1=300, y2= 500]], action:<mark|replace|insert>, marking:<highlight|underline|shade>, float: <event_key> },
+        ]
+    }
+    ...
+}
