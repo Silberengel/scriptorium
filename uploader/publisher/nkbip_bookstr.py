@@ -67,6 +67,7 @@ def serialize_bookstr(
     events: List[Event] = []
     emitted: Set[str] = set()
     d_tag_to_parent_d: Dict[str, str] = {}  # Track parent d-tags for a-tag generation
+    parent_section_count: Dict[str, int] = {}  # Track section count per parent for unique d-tags
 
     def emit_index(d_path: List[str], title: str, maybe_book_title: str | None = None, is_collection_root: bool = False, is_book: bool = False, is_chapter: bool = False):
         d = _d_for(collection_id, *d_path)
@@ -153,6 +154,67 @@ def serialize_bookstr(
         verse_level = tree.section_level
         # Find leaf index
         leaf_idx = len(titles) - 1
+        
+        # Check if this is content at a level other than verse_level - these become "-section" events
+        # Content at verse_level is handled as normal verses below
+        current_level = levels[leaf_idx] if leaf_idx < len(levels) else verse_level
+        is_section_content = current_level != verse_level
+        
+        if is_section_content:
+            # Content at non-verse level (e.g., introduction, preambles) - emit as kind 30041 with "-section" suffix
+            # Determine parent d-tag based on path structure
+            parent_d_tag = None
+            
+            # Emit indexes for all ancestors up to the parent
+            if len(titles) > 1:
+                # Has parent(s) - emit indexes for ancestors
+                for i in range(len(titles) - 1):
+                    is_root = (i == 0)
+                    emit_index(titles[: i + 1], titles[i], is_collection_root=is_root)
+                # Get parent d-tag (the immediate parent)
+                parent_d_tag = _d_for(collection_id, *titles[:-1])
+            elif len(titles) == 1:
+                # Only one title - parent is collection root
+                is_root = True
+                emit_index(titles[:1], titles[0], is_collection_root=is_root)
+                parent_d_tag = _d_for(collection_id, titles[0])
+            
+            # Emit content as kind 30041
+            # Use parent d-tag with "-section-N" appended (N is incrementing counter per parent)
+            if parent_d_tag:
+                # Increment counter for this parent
+                if parent_d_tag not in parent_section_count:
+                    parent_section_count[parent_d_tag] = 0
+                parent_section_count[parent_d_tag] += 1
+                section_num = parent_section_count[parent_d_tag]
+                verse_d = f"{parent_d_tag}-section-{section_num}"
+            else:
+                # Fallback: use collection_id-section if no parent
+                if collection_id not in parent_section_count:
+                    parent_section_count[collection_id] = 0
+                parent_section_count[collection_id] += 1
+                section_num = parent_section_count[collection_id]
+                verse_d = f"{collection_id}-section-{section_num}"
+            
+            verse_title = titles[-1] if titles else "Section"
+            s_tags = [["d", verse_d], ["title", verse_title], ["L", language], ["m", "text/asciidoc"]]
+            
+            # Add type tag
+            pub_type = metadata.type if metadata and hasattr(metadata, "type") and metadata.type else "book"
+            s_tags.append(["type", pub_type])
+            
+            # Add version tag if available
+            if metadata and hasattr(metadata, "version") and metadata.version:
+                s_tags.append(["version", metadata.version.lower()])
+            
+            # Track parent d-tag for a-tag generation
+            if parent_d_tag:
+                d_tag_to_parent_d[verse_d] = parent_d_tag
+            
+            events.append(Event(kind=30041, tags=s_tags, content=entry.content))
+            continue
+        
+        # Standard book/chapter/verse structure
         # Heuristics to detect chapter vs book:
         # Prefer the nearest ancestor whose title contains 'chapter' as chapter,
         # and the previous ancestor as book (even if same heading level).

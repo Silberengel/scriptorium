@@ -145,11 +145,19 @@ async def publish_events_ndjson(
     first_event_d_tag = None
     first_event_kind = None
     
-    for data in events_data:
+    # Use current time for created_at
+    # For replaceable events (30040, 30041), the relay will accept if created_at is newer
+    # Use current time + small buffer (relays typically allow up to ~1 hour in the future)
+    # For large batches, we'll use the same timestamp for all events (they'll be processed quickly)
+    current_time = int(time.time())
+    
+    for idx, data in enumerate(events_data):
         # Build event JSON
+        # Use current time for all events - the relay will accept them as replacements
+        # if they're newer than existing events (even by 1 second)
         event_json = {
             "pubkey": pub_hex,
-            "created_at": int(time.time()),
+            "created_at": current_time,  # Use same timestamp for all - relay will accept if newer than existing
             "kind": data["kind"],
             "tags": data.get("tags", []),
             "content": data.get("content", ""),

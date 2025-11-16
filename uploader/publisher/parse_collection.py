@@ -82,19 +82,28 @@ def parse_adoc_structure(
     section_level = max(contentful_levels) if contentful_levels else 4
 
     # Build SectionEntry list for verse nodes at section_level with non-empty content
+    # Also capture content at all other levels that aren't at section_level - these become "-section" events
     sections: List[SectionEntry] = []
     for path, buf in nodes:
         if not buf:
             continue
         level = path[-1][0]
-        if level != section_level:
-            continue
         content = "\n".join(buf).strip()
         if not content:
             continue
-        path_titles = [t for _, t in path]
-        path_levels = [lv for lv, _ in path]
-        sections.append(SectionEntry(path_titles=path_titles, path_levels=path_levels, content=content))
+        
+        # Include content at section_level (verses) - these are the main content
+        if level == section_level:
+            # Standard verse content
+            path_titles = [t for _, t in path]
+            path_levels = [lv for lv, _ in path]
+            sections.append(SectionEntry(path_titles=path_titles, path_levels=path_levels, content=content))
+        else:
+            # Content at any other level - treat as a section
+            # This captures introduction sections, preambles, and any other content not at verse level
+            path_titles = [t for _, t in path]
+            path_levels = [lv for lv, _ in path]
+            sections.append(SectionEntry(path_titles=path_titles, path_levels=path_levels, content=content))
 
     return CollectionTree(sections=sections, section_level=section_level)
 
