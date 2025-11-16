@@ -12,7 +12,7 @@ from .nkbip_bookstr import serialize_bookstr
 import asyncio
 import json
 from .metadata import load_metadata, load_title_mapping
-from .util import to_ascii_text, strip_invisible_text, unwrap_hard_wraps, ensure_blank_before_headings, ensure_blank_before_attributes, remove_discrete_attributes
+from .util import to_ascii_text, strip_invisible_text, unwrap_hard_wraps, ensure_blank_before_headings, ensure_blank_before_attributes, remove_discrete_attributes, ensure_blank_between_paragraphs
 from .text_structure import promote_headings
 
 
@@ -100,6 +100,8 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     # Final formatting: ensure blank before attribute blocks, then headings (noop if none)
     adoc = ensure_blank_before_attributes(adoc)
     adoc = ensure_blank_before_headings(adoc)
+    # Enforce paragraph separation at the very end
+    adoc = ensure_blank_between_paragraphs(adoc)
     # store a single normalized AsciiDoc as proof of pipeline
     out_file = layout.adoc_dir / "normalized-publication.adoc"
     out_file.write_text(adoc, encoding="utf-8")

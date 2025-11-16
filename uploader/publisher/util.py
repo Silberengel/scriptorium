@@ -300,3 +300,47 @@ def remove_discrete_attributes(text: str) -> str:
     return "\n".join(out) + "\n"
 
 
+def ensure_blank_between_paragraphs(text: str) -> str:
+    """
+    Ensure there's exactly one blank line between adjacent plain paragraph lines
+    (non-structural, non-heading, non-list, non-attribute).
+    """
+    if not text:
+        return text
+    out: list[str] = []
+    INPARA_SENTINEL = "<<INP>>"
+    PARA_BREAK = "<<PARA>>"
+    for line in text.splitlines():
+        if line == PARA_BREAK:
+            # emit a blank line unconditionally for explicit paragraph breaks
+            if out and out[-1] != "":
+                out.append("")
+            elif not out:
+                out.append("")
+            # keep a single blank; skip further processing for this line
+            continue
+        if out:
+            prev = out[-1]
+            if prev.strip() != "" and line.strip() != "":
+                # Do not separate lines that are marked as in-paragraph (came from <br>)
+                if prev.lstrip().startswith(INPARA_SENTINEL) or line.lstrip().startswith(INPARA_SENTINEL):
+                    pass
+                else:
+                    prev_is_structural = (
+                        prev.lstrip().startswith(("=", "* ", "- ", ". "))
+                        or re.match(r"^\d+\.\s", prev.lstrip()) is not None
+                        or (prev.strip().startswith("[") and prev.strip().endswith("]"))
+                    )
+                    curr_is_structural = (
+                        line.lstrip().startswith(("=", "* ", "- ", ". "))
+                        or re.match(r"^\d+\.\s", line.lstrip()) is not None
+                        or (line.strip().startswith("[") and line.strip().endswith("]"))
+                    )
+                    if not prev_is_structural and not curr_is_structural:
+                        out.append("")
+        out.append(line)
+    # Strip sentinel markers
+    cleaned = [l.replace(INPARA_SENTINEL, "") for l in out if l != PARA_BREAK]
+    return "\n".join(cleaned) + "\n"
+
+
