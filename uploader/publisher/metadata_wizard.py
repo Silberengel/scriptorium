@@ -44,7 +44,7 @@ def draft_metadata_from_document(
         description=None,
         collection_id=collection_id,
         has_collection=has_collection,
-        levels={"collection": "Collection", "book": "Book", "chapter": "Chapter", "section": "Section"},
+        levels={"collection": "Collection", "book": "Book", "chapter": "Chapter", "verse": "Verse"},
         wikistr_mappings=[],
         use_bookstr=True,
         book_title_mapping_file=None,

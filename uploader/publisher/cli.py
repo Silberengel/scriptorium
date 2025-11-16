@@ -71,22 +71,22 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     if getattr(args, "promote_default_structure", False) or getattr(args, "chapter_pattern", None) or getattr(args, "section_pattern", None) or getattr(args, "verse_pattern", None):
         # Allow titles starting with a digit (e.g., "4 Kings Chapter 1") as well as letters
         chapter_pat = args.chapter_pattern if getattr(args, "chapter_pattern", None) else r"^[A-Za-z0-9][^\n]*\sChapter\s+\d+\.?$"
-        # prefer section_pattern, fallback to legacy verse_pattern, then default (allow trailing period optional)
-        section_pat = (
-            args.section_pattern
-            if getattr(args, "section_pattern", None)
-            else (args.verse_pattern if getattr(args, "verse_pattern", None) else r"^\d+:\d+\.?$")
+        # prefer verse_pattern, fallback to legacy section_pattern, then default (allow trailing period optional)
+        verse_pat = (
+            args.verse_pattern
+            if getattr(args, "verse_pattern", None)
+            else (args.section_pattern if getattr(args, "section_pattern", None) else r"^\d+:\d+\.?$")
         )
         # If using default structure promotion and user didn't explicitly choose levels,
-        # use chapter=3, section=4 to match pattern document.
+        # use chapter=3, verse=4 to match pattern document.
         chapter_level = getattr(args, "chapter_level", 3 if getattr(args, "promote_default_structure", False) else 4)
-        section_level = getattr(args, "section_level", 4 if getattr(args, "promote_default_structure", False) else 5)
+        verse_level = getattr(args, "verse_level", 4 if getattr(args, "promote_default_structure", False) else 5)
         adoc = promote_headings(
             adoc,
             chapter_regex=chapter_pat,
-            section_regex=section_pat,
+            verse_regex=verse_pat,
             chapter_level=chapter_level,
-            section_level=section_level,
+            verse_level=verse_level,
             insert_preamble=not getattr(args, "no_preamble", False),
         )
     # Additional sanitation options
@@ -269,12 +269,12 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="Normalize to AsciiDoc, parse structure, and write NKBIP-01 compliant events",
         description=(
-            "Convert source to normalized AsciiDoc, parse Collection→Book→Chapter→Section, and write NDJSON events.\n"
+            "Convert source to normalized AsciiDoc, parse Collection→Book→Chapter→Verse, and write NDJSON events.\n"
             "\n"
             "Events are generated with NKBIP-01 compliant tags:\n"
             "  - Collection root (kind 30040): title, author, publisher, published_on, published_by, summary, type\n"
             "  - Book/Chapter indexes (kind 30040): type, book, chapter (if use_bookstr enabled)\n"
-            "  - Section content (kind 30041): type, book, chapter, verse (if use_bookstr enabled)\n"
+            "  - Verse content (kind 30041): type, book, chapter, verse (if use_bookstr enabled)\n"
             "\n"
             "Metadata is loaded from @metadata.yml in the input directory. Additional NKBIP-01 tags\n"
             "can be specified via the 'additional_tags' field (e.g., image, ISBN, topics).\n"
@@ -287,9 +287,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Structure promotion:\n"
             "  --promote-default-structure        Promote 'X Chapter N' to level-4 and 'N:N.' to level-5 headings\n"
             "  --chapter-pattern REGEX            Custom regex to detect chapter lines\n"
-            "  --section-pattern REGEX            Custom regex to detect section lines\n"
+            "  --verse-pattern REGEX              Custom regex to detect verse lines\n"
             "  --chapter-level N                  Heading level for chapter matches (default: 4)\n"
-            "  --section-level N                  Heading level for section matches (default: 5)\n"
+            "  --verse-level N                    Heading level for verse matches (default: 5)\n"
             "  --no-preamble                      Do not insert a 'Preamble' under chapters\n"
         ),
         formatter_class=RichHelpFormatter,
@@ -302,18 +302,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=4,
         metavar="N",
-        help="Only unwrap inside sections at heading level N and deeper (default: 4)",
+        help="Only unwrap inside verses at heading level N and deeper (default: 4)",
     )
     # Structural promotion options
     sp.add_argument("--promote-default-structure", action="store_true", help="Promote 'X Chapter N' to level-4 and 'N:N.' to level-5 headings, with preamble insertion")
     sp.add_argument("--chapter-pattern", help="Regex to detect chapter lines to promote (overrides default)")
-    sp.add_argument("--section-pattern", help="Regex to detect section lines to promote (overrides default)")
+    sp.add_argument("--verse-pattern", help="Regex to detect verse lines to promote (overrides default)")
     # legacy aliases (hidden)
-    sp.add_argument("--verse-pattern", help=argparse.SUPPRESS)
+    sp.add_argument("--section-pattern", help=argparse.SUPPRESS)
     sp.add_argument("--chapter-level", type=int, default=4, help="Heading level to assign for chapter matches")
-    sp.add_argument("--section-level", type=int, default=5, help="Heading level to assign for section matches")
+    sp.add_argument("--verse-level", type=int, default=5, help="Heading level to assign for verse matches")
     # legacy alias (hidden)
-    sp.add_argument("--verse-level", type=int, help=argparse.SUPPRESS)
+    sp.add_argument("--section-level", type=int, help=argparse.SUPPRESS)
     sp.add_argument("--no-preamble", action="store_true", help="Do not auto-insert a Preamble heading after chapter lines")
     sp.set_defaults(func=_cmd_generate)
 

@@ -174,10 +174,10 @@ def to_ascii_text(text: str) -> str:
 def unwrap_hard_wraps(text: str, *, min_level: int = 4) -> str:
     """
     Merge hard-wrapped lines within paragraphs into single lines,
-    but only inside level-4 sections (==== heading) and deeper.
+    but only inside level-4 verses (==== heading) and deeper.
     Rules:
       - Track current heading level based on leading '='
-      - Only unwrap when current_level >= 4 (section content)
+      - Only unwrap when current_level >= 4 (verse content)
       - Always preserve blank lines (paragraph separators)
       - Always preserve structural lines:
           headings, attribute lines (:name:), list items, block fences
@@ -235,7 +235,7 @@ def unwrap_hard_wraps(text: str, *, min_level: int = 4) -> str:
             flush_buffer()
             out_lines.append(line)
             continue
-        # accumulate paragraph line only if inside section (level >= 4)
+        # accumulate paragraph line only if inside verse (level >= 4)
         if current_level >= min_level:
             buffer.append(line)
         else:

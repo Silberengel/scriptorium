@@ -7,9 +7,9 @@ def promote_headings(
     adoc_text: str,
     *,
     chapter_regex: Optional[str] = None,
-    section_regex: Optional[str] = None,
+    verse_regex: Optional[str] = None,
     chapter_level: int = 4,
-    section_level: int = 5,
+    verse_level: int = 5,
     insert_preamble: bool = True,
 ) -> str:
     """
@@ -24,32 +24,32 @@ def promote_headings(
         return adoc_text
 
     chapter_re = re.compile(chapter_regex) if chapter_regex else None
-    # Build two regexes for section detection:
-    # - section_re_line: anchored (original) for full-line matches to become headings
-    # - section_re_any: unanchored variant for splitting inline occurrences out to their own line
-    section_re_line = re.compile(section_regex) if section_regex else None
-    section_re_any = None
-    if section_regex:
-        pat_any = section_regex
+    # Build two regexes for verse detection:
+    # - verse_re_line: anchored (original) for full-line matches to become headings
+    # - verse_re_any: unanchored variant for splitting inline occurrences out to their own line
+    verse_re_line = re.compile(verse_regex) if verse_regex else None
+    verse_re_any = None
+    if verse_regex:
+        pat_any = verse_regex
         if pat_any.startswith("^"):
             pat_any = pat_any[1:]
         if pat_any.endswith("$"):
             pat_any = pat_any[:-1]
-        section_re_any = re.compile(pat_any)
+        verse_re_any = re.compile(pat_any)
 
     lines = adoc_text.splitlines()
-    # Split inline section markers into standalone heading lines where possible
-    if section_re_any:
+    # Split inline verse markers into standalone heading lines where possible
+    if verse_re_any:
         split_lines = []
         for line in lines:
             work = line
             progressed = True
             while progressed:
                 progressed = False
-                m = section_re_any.search(work)
+                m = verse_re_any.search(work)
                 if not m:
                     break
-                # Only treat as a section marker if it appears at the start of the line
+                # Only treat as a verse marker if it appears at the start of the line
                 # (to avoid accidentally splitting numbers like years or references in the middle).
                 if m.start() != 0:
                     break
@@ -89,9 +89,9 @@ def promote_headings(
             out.append(f"{h(chapter_level)} {stripped}")
             out.append("")
             i += 1
-            # Optionally add Preamble if immediate following text before next section
-            if insert_preamble and section_re_line:
-                # Look ahead: if next non-empty non-heading non-section is text, inject preamble
+            # Optionally add Preamble if immediate following text before next verse
+            if insert_preamble and verse_re_line:
+                # Look ahead: if next non-empty non-heading non-verse is text, inject preamble
                 j = i
                 saw_text = False
                 while j < len(lines):
@@ -101,20 +101,20 @@ def promote_headings(
                         continue
                     if nxt.startswith("="):
                         break
-                    if section_re_line.match(nxt):
+                    if verse_re_line.match(nxt):
                         break
                     saw_text = True
                     break
                 if saw_text:
-                    out.append(f"{h(section_level)} Preamble")
+                    out.append(f"{h(verse_level)} Preamble")
                     out.append("")
             continue
 
-        # Section detection
-        if section_re_line and section_re_line.match(stripped):
+        # Verse detection
+        if verse_re_line and verse_re_line.match(stripped):
             # Normalize 'N:N.' → 'N:N' for heading text
             heading_text = re.sub(r"\.$$", "", stripped)
-            out.append(f"{h(section_level)} {heading_text}")
+            out.append(f"{h(verse_level)} {heading_text}")
             out.append("")
             i += 1
             continue

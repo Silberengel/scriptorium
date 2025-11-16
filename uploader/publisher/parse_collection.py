@@ -9,19 +9,19 @@ HEADING_RE = re.compile(r"^(=+)\s+(.*)$")
 
 @dataclass
 class SectionEntry:
-    # Titles from top heading down to the section leaf (inclusive of ancestors)
+    # Titles from top heading down to the verse leaf (inclusive of ancestors)
     path_titles: List[str]
     # Heading levels corresponding to path_titles (same length)
     path_levels: List[int]
-    # The leaf section content
+    # The leaf verse content
     content: str
 
 
 @dataclass
 class CollectionTree:
-    # All section entries discovered
+    # All verse entries discovered
     sections: List[SectionEntry]
-    # The heading level used for sections (leaf level)
+    # The heading level used for verses (leaf level)
     section_level: int
 
 
@@ -35,8 +35,8 @@ def parse_adoc_structure(
     Generic AsciiDoc heading parser:
       - Tracks a stack of headings by level (e.g., =, ==, ===, ====, ...)
       - Accumulates content lines under the current heading
-      - Determines the deepest heading level that contains content and treats that as 'section_level'
-      - Produces SectionEntry for each leaf at section_level with full path of ancestor titles
+      - Determines the deepest heading level that contains content and treats that as 'section_level' (verse level)
+      - Produces SectionEntry for each verse leaf at section_level with full path of ancestor titles
     """
     lines = adoc_text.splitlines()
 
@@ -73,7 +73,7 @@ def parse_adoc_structure(
         lvl, ttl, buf = stack.pop()
         nodes.append(([(lv, tt) for lv, tt, _ in stack] + [(lvl, ttl)], buf))
 
-    # Determine section level: deepest level that has any non-empty content (after strip)
+    # Determine verse level: deepest level that has any non-empty content (after strip)
     contentful_levels: List[int] = []
     for path, buf in nodes:
         content = "\n".join(buf).strip()
@@ -81,7 +81,7 @@ def parse_adoc_structure(
             contentful_levels.append(path[-1][0])
     section_level = max(contentful_levels) if contentful_levels else 4
 
-    # Build SectionEntry list for nodes at section_level with non-empty content
+    # Build SectionEntry list for verse nodes at section_level with non-empty content
     sections: List[SectionEntry] = []
     for path, buf in nodes:
         if not buf:

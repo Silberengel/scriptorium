@@ -30,7 +30,7 @@ def _d_for(*parts: str) -> str:
     norm = [p for p in norm if p]
     # Bible-like tail compression:
     # If the penultimate segment looks like "<book>-chapter-<num>"
-    # and the last looks like "<n>-<m>" (section indices),
+    # and the last looks like "<n>-<m>" (verse indices),
     # drop the "-chapter-<num>" suffix so we keep "<book>-<n>-<m>"
     if len(norm) >= 2:
         import re as _re
@@ -56,12 +56,12 @@ def serialize_bookstr(
 ) -> List[Event]:
     """
     Convert generic multi-level CollectionTree into bookstr-like events:
-    - Determine section_level from tree.section_level
+    - Determine verse_level from tree.section_level
     - For each SectionEntry, treat:
-        ancestors before (section_level - 2) as collection indexes (0..N)
-        ancestor at (section_level - 2) as book
-        ancestor at (section_level - 1) as chapter
-        leaf at (section_level) as section content (30041)
+        ancestors before (verse_level - 2) as collection indexes (0..N)
+        ancestor at (verse_level - 2) as book
+        ancestor at (verse_level - 1) as chapter
+        leaf at (verse_level) as verse content (30041)
     - Emit unique index events (kind 30040) for each path prefix
     """
     events: List[Event] = []
@@ -144,7 +144,7 @@ def serialize_bookstr(
         titles = entry.path_titles
         levels = entry.path_levels
         # Identify indices
-        section_level = tree.section_level
+        verse_level = tree.section_level
         # Find leaf index
         leaf_idx = len(titles) - 1
         # Heuristics to detect chapter vs book:
@@ -175,11 +175,11 @@ def serialize_bookstr(
             chapter_title = titles[chapter_idx]
             emit_index(titles[: chapter_idx + 1], chapter_title, maybe_book_title=(titles[book_idx] if book_idx < len(titles) else None), is_chapter=True)
 
-        # Emit section content (kind 30041)
-        section_d = _d_for(collection_id, *titles)
-        section_title = titles[-1]
+        # Emit verse content (kind 30041)
+        verse_d = _d_for(collection_id, *titles)
+        verse_title = titles[-1]
         # NKBIP-01 requires "title" tag (not "t") for kind 30041
-        s_tags = [["d", section_d], ["title", section_title], ["L", language], ["m", "text/asciidoc"]]
+        s_tags = [["d", verse_d], ["title", verse_title], ["L", language], ["m", "text/asciidoc"]]
         
         # Add bookstr macro tags for searchability
         if use_bookstr:
@@ -211,8 +211,8 @@ def serialize_bookstr(
                     chapter_num = chapter_match.group(1)
                     s_tags.append(["chapter", chapter_num])
             
-            # Extract and add verse tag (if section title matches verse pattern like "1:1" or "1:2")
-            verse_match = re.match(r'^(\d+):(\d+)$', section_title.strip())
+            # Extract and add verse tag (if verse title matches verse pattern like "1:1" or "1:2")
+            verse_match = re.match(r'^(\d+):(\d+)$', verse_title.strip())
             if verse_match:
                 verse_num = verse_match.group(2)  # Just the verse number
                 s_tags.append(["verse", verse_num])

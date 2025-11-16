@@ -30,11 +30,11 @@ Step-by-step workflow
    - Optional flags:
      - `--ascii-only`  Transliterate to plain ASCII and drop non-ASCII
      - `--unwrap-lines`  Merge hard-wrapped lines within paragraphs
-     - `--unwrap-level N`  Only unwrap inside sections at heading level N and deeper (default: 4)
+     - `--unwrap-level N`  Only unwrap inside verses at heading level N and deeper (default: 4)
      - `--promote-default-structure`  Promote 'X Chapter N' and 'N:N.' into headings, add 'Preamble'
      - `--chapter-pattern REGEX`  Custom regex for chapter detection
-     - `--section-pattern REGEX`  Custom regex for section detection
-     - `--chapter-level N` / `--section-level N`  Custom heading levels
+     - `--verse-pattern REGEX`  Custom regex for verse detection
+     - `--chapter-level N` / `--verse-level N`  Custom heading levels
      - `--no-preamble`  Do not insert preamble under detected chapters
    - Note:
      - For DRM-Bible sources, avoid `--unwrap-lines`. Paragraphs are already normalized during HTML→AsciiDoc conversion, and unwrapping can interfere with verse promotion (N:N) by moving markers off line starts.
@@ -86,10 +86,10 @@ Step-by-step workflow
 5) Generate final artifacts (AsciiDoc → indexes + events)
    - Re-run generate to apply metadata/mappings:
      - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML [--promote-default-structure] [--ascii-only] [--unwrap-lines] [--unwrap-level N]`
-   - Events are generated with NKBIP-01 compliant tags:
+     - Events are generated with NKBIP-01 compliant tags:
      - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, plus any `additional_tags`
      - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true`)
-     - Section content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true`)
+     - Verse content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true`)
    - Outputs:
      - `uploader/publisher/out/events/events.ndjson` (serialized events ready for publishing)
      - `uploader/publisher/out/cache/event_index.json` (quick index)
