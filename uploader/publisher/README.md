@@ -37,6 +37,8 @@ Step-by-step workflow
      - `--section-pattern REGEX`  Custom regex for section detection
      - `--chapter-level N` / `--section-level N`  Custom heading levels
      - `--no-preamble`  Do not insert preamble under detected chapters
+   - Note:
+     - For DRM-Bible sources, avoid `--unwrap-lines`. Paragraphs are already normalized during HTML→AsciiDoc conversion, and unwrapping can interfere with verse promotion (N:N) by moving markers off line starts.
    - Outputs:
      - `uploader/publisher/out/adoc/normalized-publication.adoc` (for review)
    - Note: This step also produces temporary events; final events will be regenerated after metadata is confirmed.

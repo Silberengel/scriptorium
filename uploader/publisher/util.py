@@ -261,7 +261,9 @@ def ensure_blank_before_headings(text: str) -> str:
             prev = out[-1]
             prev_stripped = prev.strip()
             is_attribute_block = prev_stripped.startswith("[") and prev_stripped.endswith("]")
-            if prev_stripped != "" and not is_attribute_block:
+            # Treat the special paragraph-break token as an existing blank
+            is_para_break_token = (prev_stripped == "<<PARA>>")
+            if prev_stripped != "" and not is_attribute_block and not is_para_break_token:
                 out.append("")  # insert blank line before heading unless preceded by attribute block
         out.append(line)
     return "\n".join(out) + "\n"
@@ -311,7 +313,8 @@ def ensure_blank_between_paragraphs(text: str) -> str:
     INPARA_SENTINEL = "<<INP>>"
     PARA_BREAK = "<<PARA>>"
     for line in text.splitlines():
-        if line == PARA_BREAK:
+        # Treat any occurrence (even with surrounding whitespace) of the token as a paragraph break
+        if line.strip() == PARA_BREAK or PARA_BREAK in line:
             # emit a blank line unconditionally for explicit paragraph breaks
             if out and out[-1] != "":
                 out.append("")

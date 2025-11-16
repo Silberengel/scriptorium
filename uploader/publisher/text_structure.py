@@ -24,22 +24,39 @@ def promote_headings(
         return adoc_text
 
     chapter_re = re.compile(chapter_regex) if chapter_regex else None
-    section_re = re.compile(section_regex) if section_regex else None
+    # Build two regexes for section detection:
+    # - section_re_line: anchored (original) for full-line matches to become headings
+    # - section_re_any: unanchored variant for splitting inline occurrences out to their own line
+    section_re_line = re.compile(section_regex) if section_regex else None
+    section_re_any = None
+    if section_regex:
+        pat_any = section_regex
+        if pat_any.startswith("^"):
+            pat_any = pat_any[1:]
+        if pat_any.endswith("$"):
+            pat_any = pat_any[:-1]
+        section_re_any = re.compile(pat_any)
 
     lines = adoc_text.splitlines()
     # Split inline section markers into standalone heading lines where possible
-    if section_re:
+    if section_re_any:
         split_lines = []
         for line in lines:
             work = line
             progressed = True
             while progressed:
                 progressed = False
-                m = section_re.search(work)
+                m = section_re_any.search(work)
                 if not m:
+                    break
+                # Only treat as a section marker if it appears at the start of the line
+                # (to avoid accidentally splitting numbers like years or references in the middle).
+                if m.start() != 0:
                     break
                 pre = work[: m.start()].rstrip()
                 marker = work[m.start() : m.end()].strip()
+                # Normalize marker like 'N:N.' → 'N:N' for heading text
+                marker = re.sub(r"\.$$", "", marker)
                 post = work[m.end() :].lstrip()
                 if pre:
                     split_lines.append(pre)
@@ -73,7 +90,7 @@ def promote_headings(
             out.append("")
             i += 1
             # Optionally add Preamble if immediate following text before next section
-            if insert_preamble and section_re:
+            if insert_preamble and section_re_line:
                 # Look ahead: if next non-empty non-heading non-section is text, inject preamble
                 j = i
                 saw_text = False
@@ -84,7 +101,7 @@ def promote_headings(
                         continue
                     if nxt.startswith("="):
                         break
-                    if section_re.match(nxt):
+                    if section_re_line.match(nxt):
                         break
                     saw_text = True
                     break
@@ -94,8 +111,10 @@ def promote_headings(
             continue
 
         # Section detection
-        if section_re and section_re.match(stripped):
-            out.append(f"{h(section_level)} {stripped}")
+        if section_re_line and section_re_line.match(stripped):
+            # Normalize 'N:N.' → 'N:N' for heading text
+            heading_text = re.sub(r"\.$$", "", stripped)
+            out.append(f"{h(section_level)} {heading_text}")
             out.append("")
             i += 1
             continue
