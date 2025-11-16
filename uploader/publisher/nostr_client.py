@@ -210,8 +210,8 @@ async def publish_events_ndjson(
                             except Exception as e:
                                 # Log but continue on individual event errors
                                 progress_queue.put(("error", str(e)))
-                        # Give time for final events to be sent
-                        await worker_asyncio.sleep(3)
+                        # Give time for final events to be sent and acknowledged
+                        await worker_asyncio.sleep(5)
                 except Exception as e:
                     # Connection errors are expected if relay disconnects
                     # but we've already published most events
@@ -308,6 +308,10 @@ async def publish_events_ndjson(
     verification_result = {"verified": False, "error": None}
     if first_event_d_tag and first_event_kind and published_count > 0:
         print(f"\nVerifying publication by querying relay for first event...")
+        print(f"  Looking for: kind={first_event_kind}, d={first_event_d_tag}, author={pub_hex[:16]}...")
+        # Wait a bit for events to propagate on the relay
+        await asyncio.sleep(2)
+        
         client = Client(relay_url)
         
         async def _verify():
@@ -316,9 +320,9 @@ async def publish_events_ndjson(
                 async with client:
                     # Wait for connection
                     if hasattr(client, "wait_connect"):
-                        await client.wait_connect(timeout=5)
+                        await client.wait_connect(timeout=10)
                     else:
-                        max_wait = 5
+                        max_wait = 10
                         waited = 0
                         while not client.connected and waited < max_wait:
                             await asyncio.sleep(0.5)
@@ -335,16 +339,18 @@ async def publish_events_ndjson(
                         "#d": [first_event_d_tag]
                     }]
                     
-                    events_found = []
-                    async for ev in client.query(filters):
-                        events_found.append(ev)
-                        break  # Only need to find one
+                    # query() returns a list of events (needs await)
+                    events_found = await client.query(filters, timeout=10)
                     
                     verification_result["verified"] = len(events_found) > 0
                     if not verification_result["verified"]:
                         verification_result["error"] = f"First event (d={first_event_d_tag}) not found on relay"
+                    else:
+                        print(f"  ✓ Found event on relay")
             except Exception as e:
                 verification_result["error"] = f"Verification error: {e}"
+                import traceback
+                print(f"  Verification exception: {traceback.format_exc()}")
         
         await _verify()
     
