@@ -1,123 +1,101 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 import re
-
-
-@dataclass
-class SectionNode:
-    title: str
-    content: str
-    index_path: List[str]  # [collection?, book, chapter, section-id]
-
-
-@dataclass
-class ChapterNode:
-    title: str
-    sections: List[SectionNode] = field(default_factory=list)
-
-
-@dataclass
-class BookNode:
-    title: str
-    chapters: List[ChapterNode] = field(default_factory=list)
-
-
-@dataclass
-class CollectionTree:
-    title: str
-    books: List[BookNode] = field(default_factory=list)
 
 
 HEADING_RE = re.compile(r"^(=+)\s+(.*)$")
 
 
+@dataclass
+class SectionEntry:
+    # Titles from top heading down to the section leaf (inclusive of ancestors)
+    path_titles: List[str]
+    # Heading levels corresponding to path_titles (same length)
+    path_levels: List[int]
+    # The leaf section content
+    content: str
+
+
+@dataclass
+class CollectionTree:
+    # All section entries discovered
+    sections: List[SectionEntry]
+    # The heading level used for sections (leaf level)
+    section_level: int
+
+
 def parse_adoc_structure(
     adoc_text: str,
     *,
-    has_collection: bool = True,
-    collection_title: Optional[str] = None,
+    has_collection: bool = True,  # retained for compatibility, not strictly required now
+    collection_title: Optional[str] = None,  # unused in generic parser
 ) -> CollectionTree:
     """
-    Very simple AsciiDoc parser that uses heading levels:
-      = collection title (optional if has_collection)
-      == book
-      === chapter
-      ==== section
-    Content under a ==== heading is the section content.
+    Generic AsciiDoc heading parser:
+      - Tracks a stack of headings by level (e.g., =, ==, ===, ====, ...)
+      - Accumulates content lines under the current heading
+      - Determines the deepest heading level that contains content and treats that as 'section_level'
+      - Produces SectionEntry for each leaf at section_level with full path of ancestor titles
     """
     lines = adoc_text.splitlines()
-    current_book: Optional[BookNode] = None
-    current_chapter: Optional[ChapterNode] = None
-    current_section_title: Optional[str] = None
-    current_section_lines: List[str] = []
 
-    books: List[BookNode] = []
-    top_title = collection_title or "Collection"
+    # Stack of (level, title, content_lines)
+    stack: List[Tuple[int, str, List[str]]] = []
+    # Collected nodes: list of tuples for later pass
+    nodes: List[Tuple[List[Tuple[int, str]], List[str]]] = []
 
-    def flush_section():
-        nonlocal current_section_title, current_section_lines, current_chapter
-        if current_section_title is None or current_chapter is None:
-            return
-        content = "\n".join(current_section_lines).strip()
-        section = SectionNode(
-            title=current_section_title,
-            content=content,
-            index_path=[],
-        )
-        current_chapter.sections.append(section)
-        current_section_title = None
-        current_section_lines = []
+    def start_heading(level: int, title: str):
+        nonlocal stack
+        # Pop until we are below the new level
+        while stack and stack[-1][0] >= level:
+            lvl, ttl, buf = stack.pop()
+            # Save node snapshot (path, content) for later analysis
+            nodes.append(([(lv, tt) for lv, tt, _ in stack] + [(lvl, ttl)], buf))
+        # Push new heading
+        stack.append((level, title, []))
+
+    def append_line(line: str):
+        if stack:
+            stack[-1][2].append(line)
 
     for ln in lines:
         m = HEADING_RE.match(ln)
         if m:
             level = len(m.group(1))
-            title = m.group(2).strip()
-            # On new heading, flush prior section if needed
-            if level <= 4:
-                flush_section()
-            if has_collection and level == 1:
-                top_title = title or top_title
-                continue
-            if (level == 1 and not has_collection) or level == 2:
-                # book
-                current_book = BookNode(title=title)
-                books.append(current_book)
-                current_chapter = None
-                continue
-            if level == 3:
-                # chapter
-                if current_book is None:
-                    # create implicit book
-                    current_book = BookNode(title="Book")
-                    books.append(current_book)
-                current_chapter = ChapterNode(title=title)
-                current_book.chapters.append(current_chapter)
-                continue
-            if level == 4:
-                # section
-                current_section_title = title if title else "Preamble"
-                current_section_lines = []
-                continue
-            # deeper levels are appended to current section as text
-            current_section_lines.append(ln)
+            title = m.group(2).strip() or "Preamble"
+            start_heading(level, title)
         else:
-            # body line
-            if current_section_title is not None:
-                current_section_lines.append(ln)
-            # ignore global text outside sections for now
+            append_line(ln)
 
-    flush_section()
-    tree = CollectionTree(title=top_title, books=books)
-    # Fill index_path for sections
-    for bi, b in enumerate(tree.books, 1):
-        for ci, c in enumerate(b.chapters, 1):
-            for si, s in enumerate(c.sections, 1):
-                if has_collection:
-                    s.index_path = [tree.title, b.title, str(ci), str(si)]
-                else:
-                    s.index_path = [b.title, str(ci), str(si)]
-    return tree
+    # Close remaining headings
+    while stack:
+        lvl, ttl, buf = stack.pop()
+        nodes.append(([(lv, tt) for lv, tt, _ in stack] + [(lvl, ttl)], buf))
+
+    # Determine section level: deepest level that has any non-empty content (after strip)
+    contentful_levels: List[int] = []
+    for path, buf in nodes:
+        content = "\n".join(buf).strip()
+        if content:
+            contentful_levels.append(path[-1][0])
+    section_level = max(contentful_levels) if contentful_levels else 4
+
+    # Build SectionEntry list for nodes at section_level with non-empty content
+    sections: List[SectionEntry] = []
+    for path, buf in nodes:
+        if not buf:
+            continue
+        level = path[-1][0]
+        if level != section_level:
+            continue
+        content = "\n".join(buf).strip()
+        if not content:
+            continue
+        path_titles = [t for _, t in path]
+        path_levels = [lv for lv, _ in path]
+        sections.append(SectionEntry(path_titles=path_titles, path_levels=path_levels, content=content))
+
+    return CollectionTree(sections=sections, section_level=section_level)
 
 

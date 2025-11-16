@@ -12,7 +12,8 @@ from .nkbip_bookstr import serialize_bookstr
 import asyncio
 import json
 from .metadata import load_metadata, load_title_mapping
-from .util import to_ascii_text, strip_invisible_text, unwrap_hard_wraps
+from .util import to_ascii_text, strip_invisible_text, unwrap_hard_wraps, ensure_blank_before_headings, ensure_blank_before_attributes, remove_discrete_attributes
+from .text_structure import promote_headings
 
 
 class HelpOnErrorArgumentParser(argparse.ArgumentParser):
@@ -66,13 +67,39 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     else:
         print(f"Unsupported source type for generate: {cfg.source_type}", file=sys.stderr)
         return 2
+    # Promote structural headings if patterns provided or preset requested
+    if getattr(args, "promote_default_structure", False) or getattr(args, "chapter_pattern", None) or getattr(args, "section_pattern", None) or getattr(args, "verse_pattern", None):
+        chapter_pat = args.chapter_pattern if getattr(args, "chapter_pattern", None) else r"^[A-Za-z][^\n]*\sChapter\s+\d+\.*$"
+        # prefer section_pattern, fallback to legacy verse_pattern, then default (allow trailing period optional)
+        section_pat = (
+            args.section_pattern
+            if getattr(args, "section_pattern", None)
+            else (args.verse_pattern if getattr(args, "verse_pattern", None) else r"^\d+:\d+\.?$")
+        )
+        # If using default structure promotion and user didn't explicitly choose levels,
+        # use chapter=3, section=4 to match pattern document.
+        chapter_level = getattr(args, "chapter_level", 3 if getattr(args, "promote_default_structure", False) else 4)
+        section_level = getattr(args, "section_level", 4 if getattr(args, "promote_default_structure", False) else 5)
+        adoc = promote_headings(
+            adoc,
+            chapter_regex=chapter_pat,
+            section_regex=section_pat,
+            chapter_level=chapter_level,
+            section_level=section_level,
+            insert_preamble=not getattr(args, "no_preamble", False),
+        )
     # Additional sanitation options
     if hasattr(args, "ascii_only") and args.ascii_only:
         adoc = to_ascii_text(adoc)
     else:
         adoc = strip_invisible_text(adoc)
     if hasattr(args, "unwrap_lines") and args.unwrap_lines:
-        adoc = unwrap_hard_wraps(adoc)
+        adoc = unwrap_hard_wraps(adoc, min_level=getattr(args, "unwrap_level", 4))
+    # Remove [discrete] blocks entirely
+    adoc = remove_discrete_attributes(adoc)
+    # Final formatting: ensure blank before attribute blocks, then headings (noop if none)
+    adoc = ensure_blank_before_attributes(adoc)
+    adoc = ensure_blank_before_headings(adoc)
     # store a single normalized AsciiDoc as proof of pipeline
     out_file = layout.adoc_dir / "normalized-publication.adoc"
     out_file.write_text(adoc, encoding="utf-8")
@@ -232,13 +259,40 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "Sanitization options:\n"
             "  --ascii-only     Transliterate to plain ASCII and drop non-ASCII\n"
-            "  --unwrap-lines   Merge hard-wrapped lines within paragraphs\n"
+            "  --unwrap-lines   Merge hard-wrapped lines within paragraphs (inside level N and deeper)\n"
+            "  --unwrap-level N Specify heading level threshold for unwrapping (default: 4)\n"
+            "\n"
+            "Structure promotion:\n"
+            "  --promote-default-structure        Promote 'X Chapter N' to level-4 and 'N:N.' to level-5 headings\n"
+            "  --chapter-pattern REGEX            Custom regex to detect chapter lines\n"
+            "  --section-pattern REGEX            Custom regex to detect section lines\n"
+            "  --chapter-level N                  Heading level for chapter matches (default: 4)\n"
+            "  --section-level N                  Heading level for section matches (default: 5)\n"
+            "  --no-preamble                      Do not insert a 'Preamble' under chapters\n"
         ),
         formatter_class=RichHelpFormatter,
     )
     sp.add_argument("--has-collection", action="store_true", help="Indicate the source has a collection (top-level) index")
     sp.add_argument("--ascii-only", action="store_true", help="Transliterate output to plain ASCII and drop non-ASCII characters")
     sp.add_argument("--unwrap-lines", action="store_true", help="Merge hard-wrapped lines within paragraphs into single lines")
+    sp.add_argument(
+        "--unwrap-level",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Only unwrap inside sections at heading level N and deeper (default: 4)",
+    )
+    # Structural promotion options
+    sp.add_argument("--promote-default-structure", action="store_true", help="Promote 'X Chapter N' to level-4 and 'N:N.' to level-5 headings, with preamble insertion")
+    sp.add_argument("--chapter-pattern", help="Regex to detect chapter lines to promote (overrides default)")
+    sp.add_argument("--section-pattern", help="Regex to detect section lines to promote (overrides default)")
+    # legacy aliases (hidden)
+    sp.add_argument("--verse-pattern", help=argparse.SUPPRESS)
+    sp.add_argument("--chapter-level", type=int, default=4, help="Heading level to assign for chapter matches")
+    sp.add_argument("--section-level", type=int, default=5, help="Heading level to assign for section matches")
+    # legacy alias (hidden)
+    sp.add_argument("--verse-level", type=int, help=argparse.SUPPRESS)
+    sp.add_argument("--no-preamble", action="store_true", help="Do not auto-insert a Preamble heading after chapter lines")
     sp.set_defaults(func=_cmd_generate)
 
     sp = sub.add_parser(

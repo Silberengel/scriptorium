@@ -68,6 +68,61 @@ def slugify(text: str) -> str:
     return text
 
 
+def slugify_strict(text: str) -> str:
+    """
+    Produce an ASCII slug using only [a-z0-9-].
+    - Lowercases
+    - Replaces any run of non [a-z0-9]+ with a single hyphen
+    - Trims leading/trailing hyphens
+    """
+    s = text.strip().lower()
+    # Decompose unicode then drop non-ascii
+    try:
+        import unicodedata
+        s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    except Exception:
+        pass
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = re.sub(r"-{2,}", "-", s)
+    s = s.strip("-")
+    return s
+
+
+def compress_slug_parts(parts: list[str], max_len: int = 75) -> str:
+    """
+    Join parts with '-' ensuring total length <= max_len.
+    Strategy:
+      1) Filter out empty parts
+      2) If over, abbreviate non-leaf parts (all but last 2) to 6 chars
+      3) If over, abbreviate non-leaf parts to 3 chars
+      4) If still over, drop oldest leftmost parts until fits (keep last 2-3)
+    """
+    filtered = [p for p in parts if p]
+    if not filtered:
+        return ""
+    def join(ps: list[str]) -> str:
+        return "-".join(ps)
+    d = join(filtered)
+    if len(d) <= max_len:
+        return d
+    # Step 2: abbreviate non-leaf (all but last 2)
+    if len(filtered) > 2:
+        abr = [ (p[:6] if i < len(filtered) - 2 else p) for i,p in enumerate(filtered) ]
+        d2 = join(abr)
+        if len(d2) <= max_len:
+            return d2
+        # Step 3: abbreviate to 3 chars
+        abr3 = [ (p[:3] if i < len(filtered) - 2 else p) for i,p in enumerate(filtered) ]
+        d3 = join(abr3)
+        if len(d3) <= max_len:
+            return d3
+        filtered = abr3
+    # Step 4: drop from left until fits, keep at least last 2
+    while len(join(filtered)) > max_len and len(filtered) > 2:
+        filtered = filtered[1:]
+    return join(filtered)
+
+
 def strip_invisible_text(text: str) -> str:
     """
     Remove a broad set of invisible/control characters and normalize spaces.
@@ -116,18 +171,23 @@ def to_ascii_text(text: str) -> str:
     return normalized.encode("ascii", "ignore").decode("ascii")
 
 
-def unwrap_hard_wraps(text: str) -> str:
+def unwrap_hard_wraps(text: str, *, min_level: int = 4) -> str:
     """
-    Merge hard-wrapped lines within paragraphs into single lines.
+    Merge hard-wrapped lines within paragraphs into single lines,
+    but only inside level-4 sections (==== heading) and deeper.
     Rules:
-      - Preserve blank lines (paragraph separators)
-      - Preserve headings (=, ==, etc.), list items (*, -, . , numbered), block fences
-      - Within a paragraph block, join lines with a single space
+      - Track current heading level based on leading '='
+      - Only unwrap when current_level >= 4 (section content)
+      - Always preserve blank lines (paragraph separators)
+      - Always preserve structural lines:
+          headings, attribute lines (:name:), list items, block fences
+      - Within an unwrap-eligible paragraph block, join lines with a single space
     """
     if not text:
         return text
     out_lines = []
     buffer = []
+    current_level = 0
 
     def is_structural(line: str) -> bool:
         l = line.lstrip()
@@ -135,6 +195,9 @@ def unwrap_hard_wraps(text: str) -> str:
             return True
         # headings
         if l.startswith("="):
+            return True
+        # attributes
+        if l.startswith(":"):
             return True
         # lists / numbered
         if l.startswith(("* ", "- ", ". ")):
@@ -153,7 +216,17 @@ def unwrap_hard_wraps(text: str) -> str:
             out_lines.append(joined)
             buffer = []
 
+    heading_re = re.compile(r"^(=+)\s")
+
     for line in text.splitlines():
+        # Track heading level
+        m = heading_re.match(line.lstrip())
+        if m:
+            flush_buffer()
+            current_level = len(m.group(1))
+            out_lines.append(line)
+            continue
+
         if not line.strip():  # blank line → paragraph break
             flush_buffer()
             out_lines.append("")
@@ -162,10 +235,68 @@ def unwrap_hard_wraps(text: str) -> str:
             flush_buffer()
             out_lines.append(line)
             continue
-        # accumulate paragraph line
-        buffer.append(line)
+        # accumulate paragraph line only if inside section (level >= 4)
+        if current_level >= min_level:
+            buffer.append(line)
+        else:
+            flush_buffer()
+            out_lines.append(line)
 
     flush_buffer()
     return "\n".join(out_lines) + "\n"
+
+
+def ensure_blank_before_headings(text: str) -> str:
+    """
+    Ensure there's exactly one blank line before any heading line (=, ==, etc.)
+    to keep AsciiDoc valid and readable.
+    Note: Do NOT insert a blank if the previous line is an attribute block like [discrete].
+    """
+    if not text:
+        return text
+    out = []
+    for line in text.splitlines():
+        is_heading = line.lstrip().startswith("=")
+        if is_heading and out:
+            prev = out[-1]
+            prev_stripped = prev.strip()
+            is_attribute_block = prev_stripped.startswith("[") and prev_stripped.endswith("]")
+            if prev_stripped != "" and not is_attribute_block:
+                out.append("")  # insert blank line before heading unless preceded by attribute block
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def ensure_blank_before_attributes(text: str) -> str:
+    """
+    Ensure there's a blank line before attribute blocks like [discrete],
+    unless it's already at the start of the file or preceded by a blank.
+    """
+    if not text:
+        return text
+    out = []
+    for line in text.splitlines():
+        is_attr = False
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            is_attr = True
+        if is_attr and out and out[-1].strip() != "":
+            out.append("")
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def remove_discrete_attributes(text: str) -> str:
+    """
+    Remove AsciiDoc [discrete] attribute lines entirely.
+    """
+    if not text:
+        return text
+    out = []
+    for line in text.splitlines():
+        if line.strip().lower() == "[discrete]":
+            continue
+        out.append(line)
+    return "\n".join(out) + "\n"
 
 

@@ -1,0 +1,209 @@
+= The Bible: Douay-Rheims Version
+
+== INDEX
+
+=== THE OLD TESTAMENT
+
+Book 01 Genesis
+Book 02 Exodus
+Book 03 Leviticus
+Book 04 Numbers
+Book 05 Deuteronomy
+Book 06 Joshua
+Book 07 Judges
+Book 08 Ruth
+Book 09 1 Kings
+Book 10 2 Kings
+Book 11 3 Kings
+Book 12 4 Kings
+Book 13 1 Paralipomenon
+Book 14 2 Paralipomenon
+Book 15 1 Ezdras
+Book 16 2 Ezdras
+Book 17 Tobias
+Book 18 Judith
+Book 19 Esther
+Book 20 Job
+Book 21 Psalms
+Book 22 Proverbs
+Book 23 Ecclesiastes
+Book 24 Canticles
+Book 25 Book of Wisdom
+Book 26 Ecclesiasticus
+Book 27 Isaias
+Book 28 Jeremiah
+Book 29 Lamentations
+Book 30 Barruch
+Book 31 Ezekiel
+Book 32 Daniel
+Book 33 Osee
+Book 34 Joel
+Book 35 Amos
+Book 36 Abdias
+Book 37 Jonah
+Book 38 Micheas
+Book 39 Nahum
+Book 40 Habacuc
+Book 41 Sophonias
+Book 42 Aggeus
+Book 43 Zacharias
+Book 44 Malachias
+Book 45 1 Machabees
+Book 46 2 Machabees
+
+=== THE NEW TESTAMENT
+
+Book 47 Matthew
+Book 48 Mark
+Book 49 Luke
+Book 50 John
+Book 51 Acts
+Book 52 Romans
+Book 53 1 Corinthians
+Book 54 2 Corinthians
+Book 55 Galatians
+Book 56 Ephesians
+Book 57 Philippians
+Book 58 Colossians
+Book 59 1 Thessalonians
+Book 60 2 Thessalonians
+Book 61 1 Timothy
+Book 62 2 Timothy
+Book 63 Titus
+Book 64 Philemon
+Book 65 Hebrews
+Book 66 James
+Book 67 1 Peter
+Book 68 2 Peter
+Book 69 1 John
+Book 70 2 John
+Book 71 3 John
+Book 72 Jude
+Book 73 Apocalypse
+
+== THE HOLY BIBLE
+
+=== Introduction
+
+Translated from the Latin Vulgate Diligently
+Compared with the Hebrew, Greek, and Other Editions in Divers Languages
+THE OLD TESTAMENT
+First Published by the English College at Douay A.D. 1609 & 1610
+and
+THE NEW TESTAMENT
+First Published by the English College at Rheims A.D. 1582
+With Annotations The Whole Revised and Diligently Compared with the Latin Vulgate
+by Bishop Richard Challoner A.D. 1749-1752
+
+=== HISTORY
+
+This e-text comes from multiple editions of Challoner's revised Douay- Rheims Version of the Holy Bible. In 1568 English exiles, many from Oxford, established the English College of Douay (Douai/Doway), Flanders, under William (later Cardinal) Allen. In October, 1578, Gregory Martin began the work of preparing an English translation of the Bible for Catholic readers, the first such translation into Modern English. Assisting were William Allen, Richard Bristow, Thomas Worthington, and William Reynolds who revised, criticized, and corrected Dr. Martin's work. The college published the New Testament at Rheims (Reims/Rhemes), France, in 1582 through John Fogny with a preface and explanatory notes, authored chiefly by Bristol, Allen, and Worthington. Later the Old Testament was published at Douay in two parts (1609 and 1610) by Laurence Kellam through the efforts of Dr. Worthington, then superior of the seminary. The translation had been prepared before the appearance of the New Testament, but the publication was delayed due to financial difficulties. The religious and scholarly adherence to the Latin Vulgate text led to the less elegant and idiomatic words and phrases often found in the translation. In some instances where no English word conveyed the full meaning of the Latin, a Latin word was Anglicized and its meaning defined in a glossary. Although ridiculed by critics, many of these words later found common usage in the English language. Spellings of proper names and the numbering of the Psalms are adopted from the Latin Vulgate.
+In 1749 Dr. Richard Challoner began a major revision of the Douay and Rheims texts, the spellings and phrasing of which had become increasingly archaic in the almost two centuries since the translations were first produced. He modernized the diction and introduced a more fluid style, while faithfully maintaining the accuracy of Dr. Martin's texts. This revision became the 'de facto' standard text for English speaking Catholics until the twentieth century. It is still highly regarded by many for its style, although it is now rarely used for liturgical purposes. The notes included in this electronic edition are generally attributed to Bishop Challoner.
+
+== CONTENTS
+
+=== The Old Testament
+
+Book of Genesis
+Book of Exodus
+Book of Leviticus
+Book of Numbers
+Book of Deuteronomy
+Book of Josue
+Book of Judges
+Book of Ruth
+First Book of Samuel, alias 1 Kings
+Second Book of Samuel, alias 2 Kings
+Third Book of Kings
+Fourth Book of Kings
+First Book of Paralipomenon
+Second Book of Paralipomenon
+First Book of Esdras
+Book of Nehemias, alias 2 Esdras
+Book of Tobias
+Book of Judith
+Book of Esther
+Book of Job
+Book of Psalms
+Book of Proverbs
+Ecclesiastes
+Solomon's Canticle of Canticles
+Book of Wisdom
+Ecclesiasticus
+Prophecy of Isaias
+Prophecy of Jeremias
+Lamentations of Jeremias
+Prophecy of Baruch
+Prophecy of Ezechiel
+Prophecy of Daniel
+Prophecy of Osee
+Prophecy of Joel
+Prophecy of Amos
+Prophecy of Abdias
+Prophecy of Jonas
+Prophecy of Micheas
+Prophecy of Nahum
+Prophecy of Habacuc
+Prophecy of Sophonias
+Prophecy of Aggeus
+Prophecy of Zacharias
+Prophecy of Malachias
+First Book of Machabees
+Second Book of Machabees
+
+[discrete]
+=== The New Testament
+
+Gospel According to St. Matthew
+Gospel According to St. Mark
+Gospel According to St. Luke
+Gospel According to St. John
+Acts of the Apostles
+Epistle of St. Paul to the Romans
+First Epistle of St. Paul to the Corinthians
+Second Epistle of St. Paul to the Corinthians
+Epistle of St. Paul to the Galatians
+Epistle of St. Paul to the Ephesians
+Epistle of St. Paul to the Philippians
+Epistle of St. Paul to the Colossians
+First Epistle of St. Paul to the Thessalonians
+Second Epistle of St. Paul to the Thessalonians
+First Epistle of St. Paul to Timothy
+Second Epistle of St. Paul to Timothy
+Epistle of St. Paul to Titus
+Epistle of St. Paul to Philemon
+Epistle of St. Paul to the Hebrews
+Catholic Epistle of St. James the Apostle
+First Epistle of St. Peter the Apostle
+Second Epistle of St. Peter the Apostle
+First Epistle of St. John the Apostle
+Second Epistle of St. John the Apostle
+Third Epistle of St. John the Apostle
+Catholic Epistle of St. Jude the Apostle
+Apocalypse of St. John the Apostle
+
+== THE OLD TESTAMENT
+
+=== THE BOOK OF GENESIS
+
+=== Preamble
+
+This book is so called from its treating of the GENERATION, that is, of the creation and the beginning of the world. The Hebrews call it BERESITH, from the Word with which it begins. It contains not only the history of the Creation of the world; but also an account of its progress during the space of 2369 years, that is, until the death of JOSEPH.
+
+=== Genesis Chapter 1
+
+==== Preamble
+
+God createth Heaven and Earth, and all things therein, in six days.
+
+==== 1:1
+
+In the beginning God created heaven, and earth.
+
+==== 1:2
+
+And the earth was void and empty, and darkness was upon the face of the deep; and the spirit of God moved over the waters.
+
+==== 1:3
+
+And God said: Be light made. And light was made.

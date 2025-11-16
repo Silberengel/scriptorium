@@ -31,6 +31,12 @@ Step-by-step workflow
    - Optional flags:
      - `--ascii-only`  Transliterate to plain ASCII and drop non-ASCII
      - `--unwrap-lines`  Merge hard-wrapped lines within paragraphs
+     - `--unwrap-level N`  Only unwrap inside sections at heading level N and deeper (default: 4)
+     - `--promote-default-structure`  Promote 'X Chapter N' and 'N:N.' into headings, add 'Preamble'
+     - `--chapter-pattern REGEX`  Custom regex for chapter detection
+     - `--section-pattern REGEX`  Custom regex for section detection
+     - `--chapter-level N` / `--section-level N`  Custom heading levels
+     - `--no-preamble`  Do not insert preamble under detected chapters
    - Outputs:
      - `uploader/publisher/out/adoc/normalized-publication.adoc` (for review)
    - Note: This step also produces temporary events; final events will be regenerated after metadata is confirmed.
@@ -61,7 +67,7 @@ Step-by-step workflow
 
 5) Generate final artifacts (AsciiDoc → indexes + events)
    - Re-run generate to apply metadata/mappings:
-     - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML [--ascii-only] [--unwrap-lines]`
+     - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML [--ascii-only] [--unwrap-lines] [--unwrap-level N]`
    - Outputs:
      - `uploader/publisher/out/events/events.ndjson` (serialized events)
      - `uploader/publisher/out/cache/event_index.json` (quick index)
