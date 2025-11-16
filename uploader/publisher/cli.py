@@ -12,6 +12,7 @@ from .nkbip_bookstr import serialize_bookstr
 import asyncio
 import json
 from .metadata import load_metadata, load_title_mapping
+from .util import to_ascii_text, strip_invisible_text, unwrap_hard_wraps
 
 
 class HelpOnErrorArgumentParser(argparse.ArgumentParser):
@@ -65,6 +66,13 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     else:
         print(f"Unsupported source type for generate: {cfg.source_type}", file=sys.stderr)
         return 2
+    # Additional sanitation options
+    if hasattr(args, "ascii_only") and args.ascii_only:
+        adoc = to_ascii_text(adoc)
+    else:
+        adoc = strip_invisible_text(adoc)
+    if hasattr(args, "unwrap_lines") and args.unwrap_lines:
+        adoc = unwrap_hard_wraps(adoc)
     # store a single normalized AsciiDoc as proof of pipeline
     out_file = layout.adoc_dir / "normalized-publication.adoc"
     out_file.write_text(adoc, encoding="utf-8")
@@ -219,10 +227,18 @@ def build_parser() -> argparse.ArgumentParser:
         "generate",
         parents=[common],
         help="Normalize to AsciiDoc, parse structure, and write serialized events (no publish)",
-        description="Convert source to normalized AsciiDoc, parse Collection→Book→Chapter→Section, and write NDJSON events.",
+        description=(
+            "Convert source to normalized AsciiDoc, parse Collection→Book→Chapter→Section, and write NDJSON events.\n"
+            "\n"
+            "Sanitization options:\n"
+            "  --ascii-only     Transliterate to plain ASCII and drop non-ASCII\n"
+            "  --unwrap-lines   Merge hard-wrapped lines within paragraphs\n"
+        ),
         formatter_class=RichHelpFormatter,
     )
     sp.add_argument("--has-collection", action="store_true", help="Indicate the source has a collection (top-level) index")
+    sp.add_argument("--ascii-only", action="store_true", help="Transliterate output to plain ASCII and drop non-ASCII characters")
+    sp.add_argument("--unwrap-lines", action="store_true", help="Merge hard-wrapped lines within paragraphs into single lines")
     sp.set_defaults(func=_cmd_generate)
 
     sp = sub.add_parser(

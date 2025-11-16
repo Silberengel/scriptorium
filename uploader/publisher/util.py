@@ -2,6 +2,7 @@ import binascii
 import hashlib
 import re
 from typing import Optional
+import unicodedata
 
 try:
     # Optional, nicer bech32 library if available
@@ -65,5 +66,106 @@ def slugify(text: str) -> str:
     text = re.sub(r"[\s_-]+", "-", text)
     text = re.sub(r"^-+|-+$", "", text)
     return text
+
+
+def strip_invisible_text(text: str) -> str:
+    """
+    Remove a broad set of invisible/control characters and normalize spaces.
+    - Removes all codepoints in Unicode category 'C*' except tab/newline
+    - Converts NBSP and NNBSP to regular spaces
+    - Removes ZWJ/ZWNJ and similar joiners
+    - Collapses repeated spaces
+    """
+    if not text:
+        return text
+    # Map common space variants to regular space
+    text = (
+        text.replace("\u00A0", " ")  # NBSP
+        .replace("\u202F", " ")      # NNBSP
+        .replace("\u2007", " ")      # figure space
+    )
+    cleaned_chars = []
+    for ch in text:
+        if ch in ("\t", "\n", "\r"):
+            cleaned_chars.append(ch)
+            continue
+        cat = unicodedata.category(ch)
+        if cat.startswith("C"):  # Control/Other (Cc, Cf, Cs, Co, Cn)
+            # drop control/invisible chars
+            continue
+        cleaned_chars.append(ch)
+    cleaned = "".join(cleaned_chars)
+    # Remove zero-width joiners explicitly (in case categorized differently)
+    cleaned = cleaned.replace("\u200B", "").replace("\u200C", "").replace("\u200D", "").replace("\ufeff", "")
+    # Collapse runs of spaces
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    # Trim trailing spaces on lines
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    return cleaned
+
+
+def to_ascii_text(text: str) -> str:
+    """
+    Best-effort transliteration to ASCII.
+    - Unicode NFKD decomposition
+    - Drop non-ASCII codepoints
+    """
+    if not text:
+        return text
+    normalized = unicodedata.normalize("NFKD", text)
+    return normalized.encode("ascii", "ignore").decode("ascii")
+
+
+def unwrap_hard_wraps(text: str) -> str:
+    """
+    Merge hard-wrapped lines within paragraphs into single lines.
+    Rules:
+      - Preserve blank lines (paragraph separators)
+      - Preserve headings (=, ==, etc.), list items (*, -, . , numbered), block fences
+      - Within a paragraph block, join lines with a single space
+    """
+    if not text:
+        return text
+    out_lines = []
+    buffer = []
+
+    def is_structural(line: str) -> bool:
+        l = line.lstrip()
+        if not l:
+            return True
+        # headings
+        if l.startswith("="):
+            return True
+        # lists / numbered
+        if l.startswith(("* ", "- ", ". ")):
+            return True
+        if re.match(r"^\d+\.\s", l):
+            return True
+        # block delimiters
+        if l.startswith(("----", "====", "****", "____", "++++", "|===")):
+            return True
+        return False
+
+    def flush_buffer():
+        nonlocal buffer
+        if buffer:
+            joined = " ".join(s.strip() for s in buffer if s is not None)
+            out_lines.append(joined)
+            buffer = []
+
+    for line in text.splitlines():
+        if not line.strip():  # blank line → paragraph break
+            flush_buffer()
+            out_lines.append("")
+            continue
+        if is_structural(line):
+            flush_buffer()
+            out_lines.append(line)
+            continue
+        # accumulate paragraph line
+        buffer.append(line)
+
+    flush_buffer()
+    return "\n".join(out_lines) + "\n"
 
 

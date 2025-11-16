@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from ..util import strip_invisible_text
 
 INVISIBLE_CHARS = [
     "\u200b",  # zero width space
@@ -9,9 +10,10 @@ INVISIBLE_CHARS = [
 
 
 def _strip_invisible(text: str) -> str:
+    # Backward compatibility: keep explicit removal list, then broad clean
     for ch in INVISIBLE_CHARS:
         text = text.replace(ch, "")
-    return text
+    return strip_invisible_text(text)
 
 
 def html_to_adoc(html_bytes: bytes, *, language: str = "en") -> str:
