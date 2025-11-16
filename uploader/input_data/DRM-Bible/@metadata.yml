@@ -10,7 +10,7 @@ levels:
   collection: Collection
   book: Book
   chapter: Chapter
-  section: Section
+  verse: Verse
 wikistr_mappings: []
 use_bookstr: true
 book_title_mapping_file: 'book_title_map.yml'
