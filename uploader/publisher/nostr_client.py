@@ -13,11 +13,16 @@ from .util import normalize_secret_key_to_hex
 
 
 def _derive_pubkey(privkey_hex: str) -> str:
-    """Derive public key from private key using secp256k1."""
+    """Derive public key from private key using secp256k1.
+    Nostr uses the 32-byte x-coordinate of the public key (64 hex chars).
+    """
     privkey_bytes = bytes.fromhex(privkey_hex)
     privkey = secp256k1.PrivateKey(privkey_bytes, raw=True)
-    pubkey = privkey.pubkey.serialize(compressed=False)[1:]  # Skip 0x04 prefix
-    return pubkey.hex()
+    # Get compressed public key (33 bytes: 0x02/0x03 + 32-byte x-coordinate)
+    pubkey_compressed = privkey.pubkey.serialize(compressed=True)
+    # Extract just the x-coordinate (skip the 0x02/0x03 prefix)
+    pubkey_x = pubkey_compressed[1:33]  # 32 bytes
+    return pubkey_x.hex()
 
 
 def _sign_event(event_json: Dict[str, Any], privkey_hex: str) -> str:
@@ -126,48 +131,120 @@ async def publish_events_ndjson(
             async with websockets.connect(relay_url) as ws:
                 await progress_queue.put("connected")
                 
-                # Publish all events
+                # Start a task to handle incoming messages (OK responses)
+                pending_oks = {}  # event_id -> asyncio.Event
+                
+                async def message_handler():
+                    """Handle incoming messages from relay."""
+                    try:
+                        async for message in ws:
+                            try:
+                                resp_data = json.loads(message)
+                                msg_type = resp_data[0]
+                                
+                                if msg_type == "OK":
+                                    event_id = resp_data[1]
+                                    accepted = resp_data[2]
+                                    msg = resp_data[3] if len(resp_data) > 3 else ""
+                                    
+                                    if event_id in pending_oks:
+                                        pending_oks[event_id].set_result((accepted, msg))
+                                    elif not accepted:
+                                        errors.append(f"Event {event_id[:8]}... rejected: {msg}")
+                                        
+                                elif msg_type == "NOTICE":
+                                    notice_msg = resp_data[1] if len(resp_data) > 1 else ""
+                                    if "rate limit" in notice_msg.lower() or "error" in notice_msg.lower():
+                                        errors.append(f"Relay notice: {notice_msg}")
+                            except json.JSONDecodeError:
+                                pass
+                            except Exception as e:
+                                errors.append(f"Error parsing message: {e}")
+                    except (websockets.exceptions.ConnectionClosed, websockets.exceptions.WebSocketException):
+                        # Connection closed or error - this is expected when publishing many events
+                        # Don't treat as fatal error
+                        pass
+                    except Exception as e:
+                        # Log but don't break - continue publishing
+                        errors.append(f"Message handler error: {e}")
+                
+                # Start message handler
+                handler_task = asyncio.create_task(message_handler())
+                
+                # Publish all events without waiting for OK responses
+                # Send events as fast as possible, handle OKs asynchronously
                 for idx, event_json in enumerate(events_list):
                     try:
+                        event_id = event_json["id"]
+                        pending_oks[event_id] = asyncio.Future()
+                        
                         # Send EVENT message: ["EVENT", event_json]
                         await ws.send(json.dumps(["EVENT", event_json]))
-                        
-                        # Wait for OK response: ["OK", event_id, accepted, message]
-                        try:
-                            response = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                            resp_data = json.loads(response)
-                            if resp_data[0] == "OK":
-                                event_id, accepted, msg = resp_data[1], resp_data[2], resp_data[3] if len(resp_data) > 3 else ""
-                                if not accepted:
-                                    errors.append(f"Event {event_id[:8]}... rejected: {msg}")
-                            elif resp_data[0] == "EVENT":
-                                # Sometimes relay sends back the event, that's fine
-                                pass
-                        except asyncio.TimeoutError:
-                            # No response, but continue (relay might be slow)
-                            pass
-                        except Exception as e:
-                            # Log but continue
-                            errors.append(f"Response error for event {idx}: {e}")
                         
                         published_count += 1
                         await progress_queue.put(1)  # Signal one event published
                         
-                        # Rate limiting
-                        if (idx + 1) % 10 == 0:
-                            await asyncio.sleep(0.05)
-                        if (idx + 1) % 100 == 0:
-                            await asyncio.sleep(0.2)
+                        # Rate limiting - small delays to avoid overwhelming relay
+                        if (idx + 1) % 50 == 0:
+                            await asyncio.sleep(0.1)
+                        if (idx + 1) % 500 == 0:
+                            await asyncio.sleep(0.5)
                             
+                    except (websockets.exceptions.ConnectionClosed, websockets.exceptions.WebSocketException) as e:
+                        # Connection lost - this can happen with many events
+                        errors.append(f"Connection lost at event {idx}/{len(events_list)}: {e}")
+                        # Break the loop - can't send more events
+                        break
                     except Exception as e:
-                        errors.append(f"Error publishing event {idx}: {e}")
-                        # Continue with next event
+                        errors.append(f"Error sending event {idx}: {e}")
+                        # Continue with next event (might be transient error)
+                        continue
                 
-                # Give time for final events to be sent
-                await asyncio.sleep(2)
+                # Give time for all events to be sent and OK responses to arrive
+                print(f"\nWaiting for relay responses...")
+                await asyncio.sleep(5)
+                
+                # Check for rejected events (those that got OK with accepted=False)
+                # We don't wait for all OKs, but check what we got
+                rejected_count = 0
+                accepted_count = 0
+                for event_id, future in list(pending_oks.items()):
+                    if future.done():
+                        try:
+                            accepted, msg = future.result()
+                            if not accepted:
+                                rejected_count += 1
+                                if rejected_count <= 10:  # Only log first 10 rejections
+                                    errors.append(f"Event {event_id[:8]}... rejected: {msg}")
+                            else:
+                                accepted_count += 1
+                        except Exception:
+                            pass
+                    else:
+                        # Cancel futures that didn't get responses
+                        future.cancel()
+                
+                # Log summary (only once)
+                if rejected_count > 0 or accepted_count > 0:
+                    if accepted_count > 0:
+                        print(f"  {accepted_count} events accepted by relay")
+                    if rejected_count > 0:
+                        print(f"  {rejected_count} events were rejected by relay")
+                    if len(pending_oks) > accepted_count + rejected_count:
+                        no_response = len(pending_oks) - accepted_count - rejected_count
+                        print(f"  {no_response} events sent (no OK response - this is normal)")
+                
+                # Cancel message handler
+                handler_task.cancel()
+                try:
+                    await handler_task
+                except asyncio.CancelledError:
+                    pass
                 
         except Exception as e:
             errors.append(f"Connection error: {e}")
+            import traceback
+            errors.append(f"Traceback: {traceback.format_exc()}")
     
     # Run with progress bar
     with tqdm(total=total, desc="Publishing", unit="ev") as pbar:
@@ -202,7 +279,20 @@ async def publish_events_ndjson(
                 break
     
     if errors:
-        print(f"\nWARNING: {len(errors)} errors occurred. First error: {errors[0]}")
+        print(f"\nWARNING: {len(errors)} errors occurred during publishing.")
+        if len(errors) <= 10:
+            for err in errors:
+                print(f"  - {err}")
+        else:
+            print(f"  First 5 errors:")
+            for err in errors[:5]:
+                print(f"  - {err}")
+            print(f"  ... and {len(errors) - 5} more")
+    
+    if published_count == 0:
+        print(f"\nERROR: No events were published! Check connection and relay URL.")
+        if errors:
+            print(f"Errors: {errors[0] if errors else 'Unknown'}")
     
     # Verify first event was actually published
     verification_result = {"verified": False, "error": None}
