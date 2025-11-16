@@ -69,7 +69,8 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         return 2
     # Promote structural headings if patterns provided or preset requested
     if getattr(args, "promote_default_structure", False) or getattr(args, "chapter_pattern", None) or getattr(args, "section_pattern", None) or getattr(args, "verse_pattern", None):
-        chapter_pat = args.chapter_pattern if getattr(args, "chapter_pattern", None) else r"^[A-Za-z][^\n]*\sChapter\s+\d+\.*$"
+        # Allow titles starting with a digit (e.g., "4 Kings Chapter 1") as well as letters
+        chapter_pat = args.chapter_pattern if getattr(args, "chapter_pattern", None) else r"^[A-Za-z0-9][^\n]*\sChapter\s+\d+\.?$"
         # prefer section_pattern, fallback to legacy verse_pattern, then default (allow trailing period optional)
         section_pat = (
             args.section_pattern
@@ -170,9 +171,14 @@ def _cmd_publish(args: argparse.Namespace) -> int:
 
 
 def _cmd_qc(args: argparse.Namespace) -> int:
-    # Placeholder: will implement QC in later steps
     cfg = load_config()
-    print(f"Will QC events on {cfg.relay_url}")
+    layout = Layout(cfg.out_dir)
+    events_path = layout.events_dir / "events.ndjson"
+    if not events_path.exists():
+        print(f"No events found at {events_path}", file=sys.stderr)
+        return 1
+    # Minimal QC removed per request; reserved for future relay verification.
+    print("QC: no checks configured.")
     return 0
 
 
