@@ -54,42 +54,57 @@ Step-by-step workflow
        - `published_on`: Publication date (e.g., "2003-05-13" or "1899")
        - `published_by`: Publication source (e.g., "public domain")
        - `summary`: Publication description
-       - `version`: Publication version (e.g., "KJV", "DRM", "3rd edition")
        - `type`: Publication type (default: "book", can be "bible", "illustrated", "magazine", etc.)
      - `language`, `collection_id`, `has_collection`
-     - `use_bookstr: true|false` (enables bookstr macro tags: `type`, `book`, `chapter`, `verse`, `version`)
-     - Optional mappings (choose either or both):
-       - Inline list:
-         ```
-         wikistr_mappings:
-           - display: Josue
-             canonical: Joshua
-           - display: 1 Kings
-             canonical: 1 Samuel
-         ```
-       - External file (YAML list with the same shape):
-         ```
-         book_title_mapping_file: book_title_map.yml
-         ```
-         If using `book_title_mapping_file`, create that YAML with a list of `{display, canonical}` pairs.
-     - Optional additional NKBIP-01 tags (e.g., for cover image, ISBN, topics):
+     
+   - **Bookstr Macro Configuration** (`use_bookstr: true`):
+     - `use_bookstr: true|false` (enables bookstr macro tags for searchability)
+     - `version`: Translation/version identifier for bookstr macro (e.g., "DRB" for Douay-Rheims Bible, "KJV" for King James Version)
+       - For Bibles, use standard abbreviations: KJV, NKJV, NIV, ESV, NASB, NLT, MSG, CEV, NRSV, RSV, ASV, YLT, WEB, GNV, DRB, etc.
+       - The version tag is added to all events (kind 30040 and 30041) when `use_bookstr: true`
+     - Bookstr tags added to events:
+       - `type`: Publication type (from metadata)
+       - `book`: Canonical book name (lowercase, hyphenated)
+       - `chapter`: Chapter number (for chapter indexes and verse content)
+       - `verse`: Verse number (for verse content)
+       - `version`: Translation/version identifier (lowercase)
+     - These tags enable the wikistr bookstr macro to search and reference specific verses, chapters, and books
+     
+   - Optional mappings (choose either or both):
+     - Inline list:
        ```
-       additional_tags:
-         - ["image", "https://example.com/cover.jpg"]
-         - ["i", "isbn:9780765382030"]
-         - ["t", "fables"]
-         - ["t", "classical"]
-         - ["source", "https://booksonline.org/"]
+       wikistr_mappings:
+         - display: Josue
+           canonical: Joshua
+         - display: 1 Kings
+           canonical: 1 Samuel
        ```
-       Note: Cover images must be hosted on a media server accessible to clients. Add the URL via the `image` tag in `additional_tags`.
+     - External file (YAML list with the same shape):
+       ```
+       book_title_mapping_file: book_title_map.yml
+       ```
+       If using `book_title_mapping_file`, create that YAML with a list of `{display, canonical}` pairs.
+       The canonical names should match what wikistr expects (e.g., "Song of Solomon" not "Song of Songs").
+     
+   - Optional additional NKBIP-01 tags (e.g., for cover image, ISBN, topics):
+     ```
+     additional_tags:
+       - ["image", "https://example.com/cover.jpg"]
+       - ["i", "isbn:9780765382030"]
+       - ["t", "fables"]
+       - ["t", "classical"]
+       - ["source", "https://booksonline.org/"]
+     ```
+     Note: Cover images must be hosted on a media server accessible to clients. Add the URL via the `image` tag in `additional_tags`.
 
 5) Generate final artifacts (AsciiDoc → indexes + events)
    - Re-run generate to apply metadata/mappings:
-     - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML [--promote-default-structure] [--ascii-only] [--unwrap-lines] [--unwrap-level N]`
+     - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML --promote-default-structure [--ascii-only]`
      - Events are generated with NKBIP-01 compliant tags:
      - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, plus any `additional_tags`
-     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true`)
-     - Verse content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true`)
+     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true` and version specified)
+     - Verse content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true` and version specified)
+     - All index events (kind 30040) include `a` tags referencing their child events (added during publishing)
    - Outputs:
      - `uploader/publisher/out/events/events.ndjson` (serialized events ready for publishing)
      - `uploader/publisher/out/cache/event_index.json` (quick index)
@@ -106,7 +121,10 @@ Step-by-step workflow
 7) QC and republish missing
    - Command:
      - `python -m uploader.publisher.cli qc`
-   - Reads back by `kind + d + author`, verifies presence/content; republishes missing (placeholder for now).
+   - Queries the relay for all events and compares with generated events
+   - Reports which events are missing
+   - To republish missing events:
+     - `python -m uploader.publisher.cli qc --republish`
 
 8) All-in-one (optional)
    - `python -m uploader.publisher.cli all --input uploader/input_data/{collection_slug}/publication.html --source-type HTML`
@@ -116,9 +134,9 @@ Commands
 --------
 - init-metadata: infer and create @metadata.yml next to your source
 - generate: convert source → AsciiDoc and generate NKBIP-01 compliant bookstr events
-- publish: publish events to relay with verification
-- qc: verify presence on relay and republish missing (placeholder)
-- all: run generate → publish → qc
+- publish: publish events to relay with verification (adds `a` tags to index events)
+- qc: verify presence on relay and republish missing events (use `--republish` to auto-republish)
+- all: run generate → publish → qc in sequence
 
 Environment
 -----------

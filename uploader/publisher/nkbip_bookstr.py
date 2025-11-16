@@ -66,6 +66,7 @@ def serialize_bookstr(
     """
     events: List[Event] = []
     emitted: Set[str] = set()
+    d_tag_to_parent_d: Dict[str, str] = {}  # Track parent d-tags for a-tag generation
 
     def emit_index(d_path: List[str], title: str, maybe_book_title: str | None = None, is_collection_root: bool = False, is_book: bool = False, is_chapter: bool = False):
         d = _d_for(collection_id, *d_path)
@@ -74,6 +75,11 @@ def serialize_bookstr(
         emitted.add(d)
         # NKBIP-01 requires "title" tag (not "t"), and "d" tag
         tags = [["d", d], ["title", title], ["L", language], ["m", "text/asciidoc"]]
+        
+        # Track parent d-tag for a-tag generation (parent is prefix of d_path)
+        if len(d_path) > 1:
+            parent_d = _d_for(collection_id, *d_path[:-1])
+            d_tag_to_parent_d[d] = parent_d
         if use_bookstr and book_title_map and maybe_book_title:
             canon = book_title_map.get(maybe_book_title)
             if canon:
@@ -181,6 +187,11 @@ def serialize_bookstr(
         # NKBIP-01 requires "title" tag (not "t") for kind 30041
         s_tags = [["d", verse_d], ["title", verse_title], ["L", language], ["m", "text/asciidoc"]]
         
+        # Track parent d-tag (chapter d-tag) for a-tag generation
+        if chapter_idx >= 0 and chapter_idx < len(titles):
+            parent_d = _d_for(collection_id, *titles[:chapter_idx + 1])
+            d_tag_to_parent_d[verse_d] = parent_d
+        
         # Add bookstr macro tags for searchability
         if use_bookstr:
             # Add type tag from metadata (default to "book")
@@ -228,6 +239,18 @@ def serialize_bookstr(
                 s_tags.append(["name", canon])
         
         events.append(Event(kind=30041, tags=s_tags, content=entry.content))
+
+    # Add parent d-tag references to events (for a-tag generation during publishing)
+    # Store as temporary "_parent_d" tag that will be used during publishing
+    for event in events:
+        d_tag = None
+        for tag in event.tags:
+            if tag and len(tag) > 0 and tag[0] == "d":
+                d_tag = tag[1] if len(tag) > 1 else None
+                break
+        if d_tag and d_tag in d_tag_to_parent_d:
+            parent_d = d_tag_to_parent_d[d_tag]
+            event.tags.append(["_parent_d", parent_d])
 
     return events
 

@@ -83,10 +83,9 @@ async def publish_events_ndjson(
             if line.strip():
                 total += 1
     
-    # Load all events and prepare them
-    events_list = []
-    first_event_d_tag = None
-    first_event_kind = None
+    # Load all events and build hierarchy for a-tags
+    events_data = []  # Store raw event data
+    parent_d_to_children = {}  # parent d-tag -> list of (child_kind, child_d_tag)
     
     with open(ndjson_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -94,30 +93,82 @@ async def publish_events_ndjson(
             if not line:
                 continue
             data = orjson.loads(line)
+            events_data.append(data)
             
-            # Build event JSON
-            event_json = {
-                "pubkey": pub_hex,
-                "created_at": int(time.time()),
-                "kind": data["kind"],
-                "tags": data.get("tags", []),
-                "content": data.get("content", ""),
-            }
+            # Extract d-tag and parent d-tag (from _parent_d temporary tag)
+            d_tag = None
+            parent_d = None
+            for tag in data.get("tags", []):
+                if tag and len(tag) > 0:
+                    if tag[0] == "d":
+                        d_tag = tag[1] if len(tag) > 1 else None
+                    elif tag[0] == "_parent_d":
+                        parent_d = tag[1] if len(tag) > 1 else None
             
-            # Compute ID and signature
-            event_id = _compute_event_id(event_json)
-            event_json["id"] = event_id
-            event_json["sig"] = _sign_event(event_json, priv_hex)
-            
-            events_list.append(event_json)
-            
-            # Capture first event's d-tag for verification
-            if first_event_d_tag is None:
-                first_event_kind = data["kind"]
-                for tag in data.get("tags", []):
-                    if tag and len(tag) > 0 and tag[0] == "d":
-                        first_event_d_tag = tag[1] if len(tag) > 1 else None
-                        break
+            if d_tag and parent_d:
+                # Build parent -> children mapping
+                if parent_d not in parent_d_to_children:
+                    parent_d_to_children[parent_d] = []
+                parent_d_to_children[parent_d].append((data["kind"], d_tag))
+    
+    # Add a-tags to kind 30040 events (index events)
+    # Format: ["a", "<kind>:<pubkey>:<d-tag>"]
+    # Also remove temporary "_parent_d" tags
+    for data in events_data:
+        d_tag = None
+        tags = data.get("tags", [])
+        new_tags = []
+        has_parent_d = False
+        
+        for tag in tags:
+            if tag and len(tag) > 0:
+                if tag[0] == "d":
+                    d_tag = tag[1] if len(tag) > 1 else None
+                    new_tags.append(tag)
+                elif tag[0] == "_parent_d":
+                    # Skip temporary parent_d tag
+                    has_parent_d = True
+                else:
+                    new_tags.append(tag)
+        
+        # If this is a kind 30040 event and has children, add a-tags
+        if data["kind"] == 30040 and d_tag and d_tag in parent_d_to_children:
+            for child_kind, child_d in parent_d_to_children[d_tag]:
+                # Format: ["a", "<kind>:<pubkey>:<d-tag>"]
+                a_tag = ["a", f"{child_kind}:{pub_hex}:{child_d}"]
+                new_tags.append(a_tag)
+        
+        data["tags"] = new_tags
+    
+    # Now build final events with IDs and signatures
+    events_list = []
+    first_event_d_tag = None
+    first_event_kind = None
+    
+    for data in events_data:
+        # Build event JSON
+        event_json = {
+            "pubkey": pub_hex,
+            "created_at": int(time.time()),
+            "kind": data["kind"],
+            "tags": data.get("tags", []),
+            "content": data.get("content", ""),
+        }
+        
+        # Compute ID and signature
+        event_id = _compute_event_id(event_json)
+        event_json["id"] = event_id
+        event_json["sig"] = _sign_event(event_json, priv_hex)
+        
+        events_list.append(event_json)
+        
+        # Capture first event's d-tag for verification
+        if first_event_d_tag is None:
+            first_event_kind = data["kind"]
+            for tag in data.get("tags", []):
+                if tag and len(tag) > 0 and tag[0] == "d":
+                    first_event_d_tag = tag[1] if len(tag) > 1 else None
+                    break
     
     # Publish events via WebSocket with progress tracking
     published_count = 0
@@ -377,3 +428,223 @@ async def publish_events_ndjson(
             print(f"  Verification exception: {traceback.format_exc()}")
     
     return verification_result
+
+
+async def query_events_from_relay(
+    relay_url: str,
+    pubkey_hex: str,
+    filters: List[Dict[str, Any]],
+    *,
+    timeout: float = 30.0,
+) -> List[Dict[str, Any]]:
+    """
+    Query relay for events matching the given filters.
+    
+    Args:
+        relay_url: WebSocket URL of the relay
+        pubkey_hex: Public key hex (64 chars)
+        filters: List of filter dictionaries (Nostr filter format)
+        timeout: Maximum time to wait for responses
+    
+    Returns:
+        List of event dictionaries found on the relay
+    """
+    events_found = []
+    
+    try:
+        async with websockets.connect(relay_url) as ws:
+            # Send REQ message: ["REQ", subscription_id, filters...]
+            subscription_id = f"qc_{int(time.time())}"
+            req_message = ["REQ", subscription_id] + filters
+            await ws.send(json.dumps(req_message))
+            
+            # Wait for events or EOSE
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                try:
+                    response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                    resp_data = json.loads(response)
+                    
+                    if resp_data[0] == "EVENT" and resp_data[1] == subscription_id:
+                        # Got an event
+                        event = resp_data[2]
+                        events_found.append(event)
+                    elif resp_data[0] == "EOSE" and resp_data[1] == subscription_id:
+                        # End of stored events
+                        break
+                    elif resp_data[0] == "NOTICE":
+                        # Relay notice, ignore
+                        continue
+                except asyncio.TimeoutError:
+                    # No more responses, assume EOSE
+                    break
+            
+            # Close subscription
+            await ws.send(json.dumps(["CLOSE", subscription_id]))
+            
+    except Exception as e:
+        # Return what we found so far, even if there was an error
+        pass
+    
+    return events_found
+
+
+async def qc_check_events(
+    relay_url: str,
+    secret_key_hex: str,
+    ndjson_path: str,
+    *,
+    republish_missing: bool = False,
+) -> Dict[str, Any]:
+    """
+    Quality control: check which events from events.ndjson are present on the relay.
+    
+    Args:
+        relay_url: WebSocket URL of the relay
+        secret_key_hex: Secret key (nsec or hex)
+        ndjson_path: Path to events.ndjson file
+        republish_missing: If True, republish missing events
+    
+    Returns:
+        Dictionary with QC results: {
+            "total": int,
+            "found": int,
+            "missing": int,
+            "missing_events": List[Dict],
+            "errors": List[str]
+        }
+    """
+    # Normalize secret key
+    priv_hex = normalize_secret_key_to_hex(secret_key_hex)
+    pub_hex = _derive_pubkey(priv_hex)
+    
+    # Load all events from NDJSON
+    events_to_check = []
+    with open(ndjson_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            data = orjson.loads(line)
+            events_to_check.append(data)
+    
+    print(f"QC: Checking {len(events_to_check)} events on relay {relay_url}...")
+    
+    # Build filters for batch queries
+    # Group by kind to reduce number of queries
+    events_by_kind: Dict[int, List[Dict[str, Any]]] = {}
+    for event_data in events_to_check:
+        kind = event_data["kind"]
+        if kind not in events_by_kind:
+            events_by_kind[kind] = []
+        events_by_kind[kind].append(event_data)
+    
+    # Query relay for each kind
+    found_events = {}  # d-tag -> event from relay
+    errors = []
+    
+    # Calculate total chunks for progress bar
+    total_chunks = 0
+    for kind, events_list in events_by_kind.items():
+        d_tags = []
+        for event_data in events_list:
+            for tag in event_data.get("tags", []):
+                if tag and len(tag) > 0 and tag[0] == "d":
+                    d_tags.append(tag[1] if len(tag) > 1 else None)
+                    break
+        if d_tags:
+            chunk_size = 100
+            total_chunks += (len(d_tags) + chunk_size - 1) // chunk_size
+    
+    # Query with progress bar
+    with tqdm(total=total_chunks, desc="QC: Querying relay", unit="chunk") as pbar:
+        for kind, events_list in events_by_kind.items():
+            # Extract d-tags for this kind
+            d_tags = []
+            for event_data in events_list:
+                for tag in event_data.get("tags", []):
+                    if tag and len(tag) > 0 and tag[0] == "d":
+                        d_tags.append(tag[1] if len(tag) > 1 else None)
+                        break
+            
+            if not d_tags:
+                continue
+            
+            # Query relay for events of this kind with these d-tags
+            # Batch queries (relays may have limits, so query in chunks)
+            chunk_size = 100
+            for i in range(0, len(d_tags), chunk_size):
+                chunk_d_tags = d_tags[i:i + chunk_size]
+                filter_dict = {
+                    "authors": [pub_hex],
+                    "kinds": [kind],
+                    "#d": chunk_d_tags
+                }
+                
+                try:
+                    found = await query_events_from_relay(relay_url, pub_hex, [filter_dict], timeout=30.0)
+                    for event in found:
+                        # Extract d-tag from event
+                        for tag in event.get("tags", []):
+                            if tag and len(tag) > 0 and tag[0] == "d":
+                                d_tag = tag[1] if len(tag) > 1 else None
+                                if d_tag:
+                                    found_events[d_tag] = event
+                                break
+                except Exception as e:
+                    errors.append(f"Error querying kind {kind} (chunk {i//chunk_size + 1}): {e}")
+                
+                pbar.update(1)
+    
+    # Compare found vs expected
+    missing_events = []
+    for event_data in events_to_check:
+        d_tag = None
+        for tag in event_data.get("tags", []):
+            if tag and len(tag) > 0 and tag[0] == "d":
+                d_tag = tag[1] if len(tag) > 1 else None
+                break
+        
+        if d_tag and d_tag not in found_events:
+            missing_events.append(event_data)
+    
+    result = {
+        "total": len(events_to_check),
+        "found": len(found_events),
+        "missing": len(missing_events),
+        "missing_events": missing_events,
+        "errors": errors,
+    }
+    
+    # Republish missing events if requested
+    if republish_missing and missing_events:
+        print(f"\nRepublishing {len(missing_events)} missing events...")
+        # Write missing events to temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ndjson', delete=False, encoding='utf-8') as f:
+            for event_data in missing_events:
+                f.write(orjson.dumps(event_data).decode('utf-8'))
+                f.write('\n')
+            temp_path = f.name
+        
+        try:
+            # Publish missing events
+            verification = await publish_events_ndjson(
+                relay_url,
+                secret_key_hex,
+                temp_path,
+                max_in_flight=100,
+            )
+            if verification and verification.get("verified"):
+                print(f"✓ Republished {len(missing_events)} missing events")
+            else:
+                errors.append(f"Failed to republish missing events: {verification.get('error', 'Unknown error') if verification else 'No verification'}")
+        finally:
+            import os
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass  # Ignore errors when cleaning up temp file
+    
+    return result

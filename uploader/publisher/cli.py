@@ -183,9 +183,57 @@ def _cmd_qc(args: argparse.Namespace) -> int:
     if not events_path.exists():
         print(f"No events found at {events_path}", file=sys.stderr)
         return 1
-    # Minimal QC removed per request; reserved for future relay verification.
-    print("QC: no checks configured.")
-    return 0
+    
+    from .nostr_client import qc_check_events
+    
+    republish = getattr(args, "republish", False)
+    
+    result = asyncio.run(
+        qc_check_events(
+            cfg.relay_url,
+            cfg.secret_key_hex,
+            str(events_path),
+            republish_missing=republish,
+        )
+    )
+    
+    # Print results
+    print(f"\nQC Results:")
+    print(f"  Total events: {result['total']}")
+    print(f"  Found on relay: {result['found']}")
+    print(f"  Missing: {result['missing']}")
+    
+    if result['errors']:
+        print(f"\n  Errors ({len(result['errors'])}):")
+        for err in result['errors'][:10]:
+            print(f"    - {err}")
+        if len(result['errors']) > 10:
+            print(f"    ... and {len(result['errors']) - 10} more")
+    
+    if result['missing'] > 0:
+        print(f"\n  Missing events (first 10):")
+        for i, event_data in enumerate(result['missing_events'][:10]):
+            d_tag = None
+            for tag in event_data.get("tags", []):
+                if tag and len(tag) > 0 and tag[0] == "d":
+                    d_tag = tag[1] if len(tag) > 1 else None
+                    break
+            kind = event_data.get("kind", "?")
+            print(f"    {i+1}. kind={kind}, d={d_tag}")
+        if len(result['missing_events']) > 10:
+            print(f"    ... and {len(result['missing_events']) - 10} more")
+        
+        if not republish:
+            print(f"\n  To republish missing events, run:")
+            print(f"    python -m uploader.publisher.cli qc --republish")
+    
+    if result['missing'] == 0 and not result['errors']:
+        print(f"\n✓ All events are present on the relay!")
+        return 0
+    elif result['missing'] > 0:
+        return 1
+    else:
+        return 0
 
 
 def _cmd_all(args: argparse.Namespace) -> int:
@@ -273,11 +321,13 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "Events are generated with NKBIP-01 compliant tags:\n"
             "  - Collection root (kind 30040): title, author, publisher, published_on, published_by, summary, type\n"
-            "  - Book/Chapter indexes (kind 30040): type, book, chapter (if use_bookstr enabled)\n"
-            "  - Verse content (kind 30041): type, book, chapter, verse (if use_bookstr enabled)\n"
+            "  - Book/Chapter indexes (kind 30040): type, book, chapter, version (if use_bookstr enabled)\n"
+            "  - Verse content (kind 30041): type, book, chapter, verse, version (if use_bookstr enabled)\n"
+            "  - Index events (kind 30040) get 'a' tags referencing child events (added during publishing)\n"
             "\n"
-            "Metadata is loaded from @metadata.yml in the input directory. Additional NKBIP-01 tags\n"
-            "can be specified via the 'additional_tags' field (e.g., image, ISBN, topics).\n"
+            "Metadata is loaded from @metadata.yml in the input directory. Set 'use_bookstr: true' and 'version'\n"
+            "(e.g., 'DRB' for Douay-Rheims, 'KJV' for King James) to enable bookstr macro tags for searchability.\n"
+            "Additional NKBIP-01 tags can be specified via the 'additional_tags' field (e.g., image, ISBN, topics).\n"
             "\n"
             "Sanitization options:\n"
             "  --ascii-only     Transliterate to plain ASCII and drop non-ASCII\n"
@@ -323,6 +373,9 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Publish previously generated events (NDJSON) to the relay using SCRIPTORIUM_KEY.\n"
             "\n"
+            "During publishing, 'a' tags are automatically added to kind 30040 index events\n"
+            "to reference their child events (both 30040 and 30041).\n"
+            "\n"
             "After publishing, verifies that the first event is present on the relay.\n"
             "Only reports success if verification passes.\n"
         ),
@@ -333,8 +386,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser(
         "qc",
         help="Quality control: verify presence on relay and republish missing",
-        description="Read back events by kind+d+author and republish any missing or mismatched content.",
+        description=(
+            "Check which events from events.ndjson are present on the relay.\n"
+            "\n"
+            "Queries the relay for all events and compares with the generated events.\n"
+            "Reports missing events and optionally republishes them.\n"
+        ),
         formatter_class=RichHelpFormatter,
+    )
+    sp.add_argument(
+        "--republish",
+        action="store_true",
+        help="Republish missing events to the relay",
     )
     sp.set_defaults(func=_cmd_qc)
 
