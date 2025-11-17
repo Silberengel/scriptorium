@@ -55,22 +55,29 @@ def load_metadata(base_dir: Path) -> Optional[Metadata]:
     )
 
 
-def load_title_mapping(base_dir: Path, md: Optional[Metadata]) -> Dict[str, str]:
+def load_title_mapping(base_dir: Path, md: Optional[Metadata]) -> Dict[str, Dict[str, str]]:
     """
     Build a mapping from display titles -> canonical names (wikistr/bookstr).
+    Returns a dict mapping display -> {"canonical-long": ..., "canonical-short": ...}
     Priority:
       1) entries in md.wikistr_mappings
       2) entries from YAML file md.book_title_mapping_file if provided
     """
-    mapping: Dict[str, str] = {}
+    mapping: Dict[str, Dict[str, str]] = {}
     if md is None:
         return mapping
     # inline mappings
     for item in (md.wikistr_mappings or []):
         disp = str(item.get("display", "")).strip()
-        canon = str(item.get("canonical", "")).strip()
-        if disp and canon:
-            mapping[disp] = canon
+        # Support both old format (canonical) and new format (canonical-long, canonical-short)
+        canon_long = str(item.get("canonical-long", item.get("canonical", ""))).strip()
+        canon_short = str(item.get("canonical-short", item.get("canonical", ""))).strip()
+        if disp and canon_long:
+            # Store with lowercase key for case-insensitive matching
+            mapping[disp.lower()] = {
+                "canonical-long": canon_long,
+                "canonical-short": canon_short if canon_short else canon_long
+            }
     # file mapping
     if md.book_title_mapping_file:
         p = (base_dir / md.book_title_mapping_file).resolve()
@@ -78,9 +85,15 @@ def load_title_mapping(base_dir: Path, md: Optional[Metadata]) -> Dict[str, str]
             y = yaml.safe_load(p.read_text(encoding="utf-8")) or []
             for item in y:
                 disp = str(item.get("display", "")).strip()
-                canon = str(item.get("canonical", "")).strip()
-                if disp and canon:
-                    mapping[disp] = canon
+                # Support both old format (canonical) and new format (canonical-long, canonical-short)
+                canon_long = str(item.get("canonical-long", item.get("canonical", ""))).strip()
+                canon_short = str(item.get("canonical-short", item.get("canonical", ""))).strip()
+                if disp and canon_long:
+                    # Store with lowercase key for case-insensitive matching
+                    mapping[disp.lower()] = {
+                        "canonical-long": canon_long,
+                        "canonical-short": canon_short if canon_short else canon_long
+                    }
         except Exception:
             # ignore file errors deliberately to keep pipeline moving
             pass

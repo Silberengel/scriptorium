@@ -51,7 +51,7 @@ def serialize_bookstr(
     collection_id: str,
     language: str = "en",
     use_bookstr: bool = True,
-    book_title_map: dict[str, str] | None = None,
+    book_title_map: dict[str, dict[str, str] | str] | None = None,  # Supports both new format (dict) and old format (str)
     metadata: Any | None = None,  # Metadata object with title, author, publisher, year, description
 ) -> List[Event]:
     """
@@ -82,9 +82,16 @@ def serialize_bookstr(
             parent_d = _d_for(collection_id, *d_path[:-1])
             d_tag_to_parent_d[d] = parent_d
         if use_bookstr and book_title_map and maybe_book_title:
-            canon = book_title_map.get(maybe_book_title)
-            if canon:
-                tags.append(["name", canon])
+            # Case-insensitive lookup
+            canon_info = book_title_map.get(maybe_book_title.lower())
+            if canon_info:
+                # Support both old format (string) and new format (dict)
+                if isinstance(canon_info, dict):
+                    canon = canon_info.get("canonical-long", "")
+                else:
+                    canon = str(canon_info)
+                if canon:
+                    tags.append(["name", canon])
         
         # Get publication type from metadata (default to "book")
         pub_type = "book"
@@ -123,12 +130,26 @@ def serialize_bookstr(
             
             # Add book tag if this is a book or chapter event
             if maybe_book_title:
-                canon = None
+                canon_info = None
                 if book_title_map:
-                    canon = book_title_map.get(maybe_book_title)
-                if canon:
-                    book_tag = slugify_strict(canon).lower()
-                    tags.append(["book", book_tag])
+                    # Case-insensitive lookup
+                    canon_info = book_title_map.get(maybe_book_title.lower())
+                if canon_info:
+                    # Support both old format (string) and new format (dict)
+                    if isinstance(canon_info, dict):
+                        canon_long = canon_info.get("canonical-long", "")
+                        canon_short = canon_info.get("canonical-short", "")
+                        if canon_long:
+                            book_tag_long = slugify_strict(canon_long).lower()
+                            tags.append(["book", book_tag_long])
+                        if canon_short and canon_short != canon_long:
+                            book_tag_short = slugify_strict(canon_short).lower()
+                            tags.append(["book", book_tag_short])
+                    else:
+                        # Old format: single canonical name
+                        canon = str(canon_info)
+                        book_tag = slugify_strict(canon).lower()
+                        tags.append(["book", book_tag])
                 else:
                     book_tag = slugify_strict(maybe_book_title).lower()
                     tags.append(["book", book_tag])
@@ -263,13 +284,26 @@ def serialize_bookstr(
             # Extract and add book tag (canonical name, lowercase, hyphenated)
             if book_idx >= 0 and book_idx < len(titles):
                 book_title = titles[book_idx]
-                canon = None
+                canon_info = None
                 if book_title_map:
-                    canon = book_title_map.get(book_title)
-                if canon:
-                    # Use canonical name, lowercase and hyphenated
-                    book_tag = slugify_strict(canon).lower()
-                    s_tags.append(["book", book_tag])
+                    # Case-insensitive lookup
+                    canon_info = book_title_map.get(book_title.lower())
+                if canon_info:
+                    # Support both old format (string) and new format (dict)
+                    if isinstance(canon_info, dict):
+                        canon_long = canon_info.get("canonical-long", "")
+                        canon_short = canon_info.get("canonical-short", "")
+                        if canon_long:
+                            book_tag_long = slugify_strict(canon_long).lower()
+                            s_tags.append(["book", book_tag_long])
+                        if canon_short and canon_short != canon_long:
+                            book_tag_short = slugify_strict(canon_short).lower()
+                            s_tags.append(["book", book_tag_short])
+                    else:
+                        # Old format: single canonical name
+                        canon = str(canon_info)
+                        book_tag = slugify_strict(canon).lower()
+                        s_tags.append(["book", book_tag])
                 else:
                     # Fallback to display title
                     book_tag = slugify_strict(book_title).lower()
@@ -296,9 +330,16 @@ def serialize_bookstr(
         
         # Legacy name tag (for backward compatibility)
         if use_bookstr and book_title_map and len(titles) >= 2:
-            canon = book_title_map.get(titles[book_idx]) if book_idx < len(titles) else None
-            if canon:
-                s_tags.append(["name", canon])
+            # Case-insensitive lookup
+            canon_info = book_title_map.get(titles[book_idx].lower()) if book_idx < len(titles) else None
+            if canon_info:
+                # Support both old format (string) and new format (dict)
+                if isinstance(canon_info, dict):
+                    canon = canon_info.get("canonical-long", "")
+                else:
+                    canon = str(canon_info)
+                if canon:
+                    s_tags.append(["name", canon])
         
         events.append(Event(kind=30041, tags=s_tags, content=entry.content))
 
