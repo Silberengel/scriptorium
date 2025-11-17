@@ -302,17 +302,53 @@ def serialize_bookstr(
         
         events.append(Event(kind=30041, tags=s_tags, content=entry.content))
 
-    # Add parent d-tag references to events (for a-tag generation during publishing)
-    # Store as temporary "_parent_d" tag that will be used during publishing
+    # Build parent -> children mapping for a-tag generation
+    # Format: parent d-tag -> list of (child_kind, child_d_tag)
+    parent_d_to_children: Dict[str, List[Tuple[int, str]]] = {}
+    
+    # Add parent d-tag references to events and build child map
     for event in events:
         d_tag = None
+        parent_d = None
         for tag in event.tags:
-            if tag and len(tag) > 0 and tag[0] == "d":
-                d_tag = tag[1] if len(tag) > 1 else None
-                break
+            if tag and len(tag) > 0:
+                if tag[0] == "d":
+                    d_tag = tag[1] if len(tag) > 1 else None
+                elif tag[0] == "_parent_d":
+                    parent_d = tag[1] if len(tag) > 1 else None
+        
+        # If this event has a parent, add it to the parent's children list
+        if d_tag and parent_d:
+            if parent_d not in parent_d_to_children:
+                parent_d_to_children[parent_d] = []
+            parent_d_to_children[parent_d].append((event.kind, d_tag))
+        
+        # Also check d_tag_to_parent_d for events that don't have _parent_d tag yet
         if d_tag and d_tag in d_tag_to_parent_d:
             parent_d = d_tag_to_parent_d[d_tag]
             event.tags.append(["_parent_d", parent_d])
+            if parent_d not in parent_d_to_children:
+                parent_d_to_children[parent_d] = []
+            parent_d_to_children[parent_d].append((event.kind, d_tag))
+    
+    # Add a-tags to kind 30040 events (index events)
+    # Use placeholder pubkey "0000000000000000000000000000000000000000000000000000000000000000"
+    # This will be replaced with the actual pubkey during publishing
+    PLACEHOLDER_PUBKEY = "0000000000000000000000000000000000000000000000000000000000000000"
+    for event in events:
+        if event.kind == 30040:
+            d_tag = None
+            for tag in event.tags:
+                if tag and len(tag) > 0 and tag[0] == "d":
+                    d_tag = tag[1] if len(tag) > 1 else None
+                    break
+            
+            # Add a-tags for all children of this index event
+            if d_tag and d_tag in parent_d_to_children:
+                for child_kind, child_d in parent_d_to_children[d_tag]:
+                    # Format: ["a", "<kind>:<pubkey>:<d-tag>"]
+                    a_tag = ["a", f"{child_kind}:{PLACEHOLDER_PUBKEY}:{child_d}"]
+                    event.tags.append(a_tag)
 
     return events
 

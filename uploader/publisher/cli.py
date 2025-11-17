@@ -201,7 +201,10 @@ def _cmd_qc(args: argparse.Namespace) -> int:
     print(f"\nQC Results:")
     print(f"  Total events: {result['total']}")
     print(f"  Found on relay: {result['found']}")
-    print(f"  Missing: {result['missing']}")
+    if 'found_by_id' in result:
+        print(f"    - Found by exact event ID (latest version): {result['found_by_id']}")
+        print(f"    - Found by d-tag (any version): {result['found_by_d_tag']}")
+    print(f"  Missing (latest version not found): {result['missing']}")
     
     if result['errors']:
         print(f"\n  Errors ({len(result['errors'])}):")

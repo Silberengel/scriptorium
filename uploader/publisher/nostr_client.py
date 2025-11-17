@@ -3,6 +3,8 @@ import asyncio
 import json
 import time
 import hashlib
+import shutil
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 import orjson
 from tqdm import tqdm
@@ -128,11 +130,28 @@ async def publish_events_ndjson(
                 elif tag[0] == "_parent_d":
                     # Skip temporary parent_d tag
                     has_parent_d = True
+                elif tag[0] == "a":
+                    # Replace placeholder pubkey in a-tags with actual pubkey
+                    # Format: ["a", "<kind>:<pubkey>:<d-tag>"]
+                    a_value = tag[1] if len(tag) > 1 else ""
+                    if ":" in a_value:
+                        parts = a_value.split(":", 2)
+                        if len(parts) == 3:
+                            child_kind, old_pubkey, child_d = parts
+                            # Replace placeholder or update with actual pubkey
+                            a_tag = ["a", f"{child_kind}:{pub_hex}:{child_d}"]
+                            new_tags.append(a_tag)
+                        else:
+                            new_tags.append(tag)
+                    else:
+                        new_tags.append(tag)
                 else:
                     new_tags.append(tag)
         
-        # If this is a kind 30040 event and has children, add a-tags
-        if data["kind"] == 30040 and d_tag and d_tag in parent_d_to_children:
+        # If this is a kind 30040 event and has children, add a-tags (if not already present)
+        # Check if a-tags already exist (from generation)
+        has_a_tags = any(t[0] == "a" for t in new_tags)
+        if data["kind"] == 30040 and d_tag and d_tag in parent_d_to_children and not has_a_tags:
             for child_kind, child_d in parent_d_to_children[d_tag]:
                 # Format: ["a", "<kind>:<pubkey>:<d-tag>"]
                 a_tag = ["a", f"{child_kind}:{pub_hex}:{child_d}"]
@@ -140,21 +159,15 @@ async def publish_events_ndjson(
         
         data["tags"] = new_tags
     
-    # Now build final events with IDs and signatures
-    events_list = []
+    # Phase 1: Prepare all events (build event JSONs without IDs/signatures)
+    # Use current time for created_at - same timestamp for all events
+    current_time = int(time.time())
+    prepared_events = []
     first_event_d_tag = None
     first_event_kind = None
     
-    # Use current time for created_at
-    # For replaceable events (30040, 30041), the relay will accept if created_at is newer
-    # Use current time + small buffer (relays typically allow up to ~1 hour in the future)
-    # For large batches, we'll use the same timestamp for all events (they'll be processed quickly)
-    current_time = int(time.time())
-    
     for idx, data in enumerate(events_data):
-        # Build event JSON
-        # Use current time for all events - the relay will accept them as replacements
-        # if they're newer than existing events (even by 1 second)
+        # Build event JSON (without id and sig - will be computed next)
         event_json = {
             "pubkey": pub_hex,
             "created_at": current_time,  # Use same timestamp for all - relay will accept if newer than existing
@@ -162,13 +175,7 @@ async def publish_events_ndjson(
             "tags": data.get("tags", []),
             "content": data.get("content", ""),
         }
-        
-        # Compute ID and signature
-        event_id = _compute_event_id(event_json)
-        event_json["id"] = event_id
-        event_json["sig"] = _sign_event(event_json, priv_hex)
-        
-        events_list.append(event_json)
+        prepared_events.append(event_json)
         
         # Capture first event's d-tag for verification
         if first_event_d_tag is None:
@@ -177,6 +184,32 @@ async def publish_events_ndjson(
                 if tag and len(tag) > 0 and tag[0] == "d":
                     first_event_d_tag = tag[1] if len(tag) > 1 else None
                     break
+    
+    # Phase 2: Compute IDs and sign all events at once
+    print(f"Computing IDs and signing {len(prepared_events)} events...")
+    events_list = []
+    with tqdm(total=len(prepared_events), desc="Signing events", unit="event") as pbar:
+        for event_json in prepared_events:
+            # Compute ID and signature
+            event_id = _compute_event_id(event_json)
+            event_json["id"] = event_id
+            event_json["sig"] = _sign_event(event_json, priv_hex)
+            events_list.append(event_json)
+            pbar.update(1)
+    
+    # Write complete events (with IDs and signatures) back to the file
+    # This ensures we have valid Nostr events for republishing
+    # Create backup of original file
+    ndjson_path_obj = Path(ndjson_path)
+    backup_path = ndjson_path_obj.with_suffix('.ndjson.backup')
+    if ndjson_path_obj.exists():
+        shutil.copy2(ndjson_path_obj, backup_path)
+    
+    # Write complete events back to the file
+    with open(ndjson_path, "w", encoding="utf-8") as f:
+        for event_json in events_list:
+            f.write(orjson.dumps(event_json).decode("utf-8"))
+            f.write("\n")
     
     # Publish events via WebSocket with progress tracking
     published_count = 0
@@ -539,87 +572,128 @@ async def qc_check_events(
     
     print(f"QC: Checking {len(events_to_check)} events on relay {relay_url}...")
     
-    # Build filters for batch queries
-    # Group by kind to reduce number of queries
-    events_by_kind: Dict[int, List[Dict[str, Any]]] = {}
+    # Extract event IDs and d-tags from events
+    event_ids = []  # List of event IDs to query
+    event_id_to_data = {}  # event_id -> event_data
+    d_tags_by_kind: Dict[int, List[str]] = {}  # kind -> list of d-tags
+    
     for event_data in events_to_check:
-        kind = event_data["kind"]
-        if kind not in events_by_kind:
-            events_by_kind[kind] = []
-        events_by_kind[kind].append(event_data)
-    
-    # Query relay for each kind
-    found_events = {}  # d-tag -> event from relay
-    errors = []
-    
-    # Calculate total chunks for progress bar
-    total_chunks = 0
-    for kind, events_list in events_by_kind.items():
-        d_tags = []
-        for event_data in events_list:
+        event_id = event_data.get("id")
+        if event_id:
+            event_ids.append(event_id)
+            event_id_to_data[event_id] = event_data
+        
+        # Also collect d-tags for fallback query
+        kind = event_data.get("kind")
+        if kind:
+            d_tag = None
             for tag in event_data.get("tags", []):
                 if tag and len(tag) > 0 and tag[0] == "d":
-                    d_tags.append(tag[1] if len(tag) > 1 else None)
+                    d_tag = tag[1] if len(tag) > 1 else None
                     break
-        if d_tags:
-            chunk_size = 100
-            total_chunks += (len(d_tags) + chunk_size - 1) // chunk_size
+            if d_tag:
+                if kind not in d_tags_by_kind:
+                    d_tags_by_kind[kind] = []
+                if d_tag not in d_tags_by_kind[kind]:
+                    d_tags_by_kind[kind].append(d_tag)
     
-    # Query with progress bar
-    with tqdm(total=total_chunks, desc="QC: Querying relay", unit="chunk") as pbar:
-        for kind, events_list in events_by_kind.items():
-            # Extract d-tags for this kind
-            d_tags = []
-            for event_data in events_list:
-                for tag in event_data.get("tags", []):
-                    if tag and len(tag) > 0 and tag[0] == "d":
-                        d_tags.append(tag[1] if len(tag) > 1 else None)
-                        break
-            
-            if not d_tags:
-                continue
-            
-            # Query relay for events of this kind with these d-tags
-            # Batch queries (relays may have limits, so query in chunks)
-            chunk_size = 100
-            for i in range(0, len(d_tags), chunk_size):
-                chunk_d_tags = d_tags[i:i + chunk_size]
+    # Query by event ID first (to check if latest version is on relay)
+    found_by_id = set()  # Set of event IDs found on relay
+    found_by_d_tag = set()  # Set of d-tags that have any version on relay
+    errors = []
+    
+    # Query by event IDs (chunked)
+    if event_ids:
+        chunk_size = 100
+        total_id_chunks = (len(event_ids) + chunk_size - 1) // chunk_size
+        
+        with tqdm(total=total_id_chunks, desc="QC: Querying by event ID", unit="chunk") as pbar:
+            for i in range(0, len(event_ids), chunk_size):
+                chunk_ids = event_ids[i:i + chunk_size]
                 filter_dict = {
                     "authors": [pub_hex],
-                    "kinds": [kind],
-                    "#d": chunk_d_tags
+                    "ids": chunk_ids
                 }
                 
                 try:
                     found = await query_events_from_relay(relay_url, pub_hex, [filter_dict], timeout=30.0)
                     for event in found:
-                        # Extract d-tag from event
-                        for tag in event.get("tags", []):
-                            if tag and len(tag) > 0 and tag[0] == "d":
-                                d_tag = tag[1] if len(tag) > 1 else None
-                                if d_tag:
-                                    found_events[d_tag] = event
-                                break
+                        event_id = event.get("id")
+                        if event_id:
+                            found_by_id.add(event_id)
                 except Exception as e:
-                    errors.append(f"Error querying kind {kind} (chunk {i//chunk_size + 1}): {e}")
+                    errors.append(f"Error querying event IDs (chunk {i//chunk_size + 1}): {e}")
                 
                 pbar.update(1)
     
+    # Query by d-tags (to check if any version exists)
+    # This is a fallback - if we find any version with the same d-tag, that's enough
+    total_d_tag_chunks = 0
+    for kind, d_tags in d_tags_by_kind.items():
+        chunk_size = 100
+        total_d_tag_chunks += (len(d_tags) + chunk_size - 1) // chunk_size
+    
+    if total_d_tag_chunks > 0:
+        with tqdm(total=total_d_tag_chunks, desc="QC: Querying by d-tag", unit="chunk") as pbar:
+            for kind, d_tags in d_tags_by_kind.items():
+                chunk_size = 100
+                for i in range(0, len(d_tags), chunk_size):
+                    chunk_d_tags = d_tags[i:i + chunk_size]
+                    filter_dict = {
+                        "authors": [pub_hex],
+                        "kinds": [kind],
+                        "#d": chunk_d_tags
+                    }
+                    
+                    try:
+                        found = await query_events_from_relay(relay_url, pub_hex, [filter_dict], timeout=30.0)
+                        for event in found:
+                            # Extract d-tag from event
+                            for tag in event.get("tags", []):
+                                if tag and len(tag) > 0 and tag[0] == "d":
+                                    d_tag = tag[1] if len(tag) > 1 else None
+                                    if d_tag:
+                                        found_by_d_tag.add(d_tag)
+                                    break
+                    except Exception as e:
+                        errors.append(f"Error querying kind {kind} by d-tag (chunk {i//chunk_size + 1}): {e}")
+                    
+                    pbar.update(1)
+    
     # Compare found vs expected
+    # An event is considered "found" if:
+    # 1. Its exact event ID is found (latest version), OR
+    # 2. Any version with the same d-tag is found (any version is enough)
     missing_events = []
+    found_count = 0
+    
     for event_data in events_to_check:
+        event_id = event_data.get("id")
         d_tag = None
         for tag in event_data.get("tags", []):
             if tag and len(tag) > 0 and tag[0] == "d":
                 d_tag = tag[1] if len(tag) > 1 else None
                 break
         
-        if d_tag and d_tag not in found_events:
+        # Check if found by ID (latest version) or by d-tag (any version)
+        is_found = False
+        if event_id and event_id in found_by_id:
+            is_found = True
+            found_count += 1
+        elif d_tag and d_tag in found_by_d_tag:
+            is_found = True
+            found_count += 1
+        
+        # Only mark as missing if exact ID is not found
+        # (We'll republish to ensure latest version is on relay)
+        if event_id and event_id not in found_by_id:
             missing_events.append(event_data)
     
     result = {
         "total": len(events_to_check),
-        "found": len(found_events),
+        "found": found_count,
+        "found_by_id": len(found_by_id),
+        "found_by_d_tag": len(found_by_d_tag),
         "missing": len(missing_events),
         "missing_events": missing_events,
         "errors": errors,
