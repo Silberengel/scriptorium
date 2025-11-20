@@ -39,12 +39,14 @@ def _cmd_init_metadata(args: argparse.Namespace) -> int:
         return 1
     # very naive title inference from filename
     inferred_title = src_path.parent.name.replace("-", " ").title()
+    base_dir = src_path.parent
     draft = draft_metadata_from_document(
         inferred_title=inferred_title,
         inferred_author=None,
         inferred_language="en",
         has_collection=bool(args.has_collection),
         book_titles=None,
+        base_dir=base_dir,
     )
     out_yaml = src_path.parent / "@metadata.yml"
     write_metadata_yaml(str(out_yaml), draft)
@@ -325,7 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Events are generated with NKBIP-01 and NKBIP-08 compliant tags:\n"
             "\n"
             "  Collection root (kind 30040):\n"
-            "    NKBIP-01: title, author, publisher, published_on, published_by, summary, type,\n"
+            "    NKBIP-01: title, author, published_on, published_by, summary, type,\n"
             "              auto-update, source, image (if specified), p and E (for derivative works),\n"
             "              plus any additional_tags\n"
             "    NKBIP-08: C (collection), T (title), v (version if specified)\n"

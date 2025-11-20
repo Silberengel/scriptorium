@@ -9,7 +9,6 @@ import yaml
 class Metadata:
     title: str
     author: str
-    publisher: str
     # Fields with defaults must come after fields without defaults
     language: str = "en"
     collection_id: str = ""
@@ -46,7 +45,6 @@ def load_metadata(base_dir: Path) -> Optional[Metadata]:
     return Metadata(
         title=str(_get("title", "")),
         author=str(_get("author", "")),
-        publisher=str(_get("publisher", "")),
         language=str(_get("language", "en")),
         collection_id=str(_get("collection_id", base_dir.name)),
         has_collection=bool(_get("has_collection", True)),

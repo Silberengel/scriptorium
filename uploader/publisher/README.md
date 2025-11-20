@@ -49,7 +49,7 @@ Step-by-step workflow
 
 4) Edit metadata and mappings
    - Open `@metadata.yml` and review:
-     - Required fields: `title`, `author`, `publisher`
+     - Required fields: `title`, `author`
      - Optional NKBIP-01 metadata fields:
        - `published_on`: Publication date (e.g., "2003-05-13" or "1899")
        - `published_by`: Publication source (e.g., "public domain")
@@ -113,7 +113,7 @@ Step-by-step workflow
      - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML --promote-default-structure [--ascii-only]`
      - Events are generated with NKBIP-01 and NKBIP-08 compliant tags:
      - **Collection root (kind 30040)**: 
-       - NKBIP-01: `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, `auto-update`, `source`, `image` (if specified), `p` and `E` (for derivative works), plus any `additional_tags`
+       - NKBIP-01: `title`, `author`, `published_on`, `published_by`, `summary`, `type`, `auto-update`, `source`, `image` (if specified), `p` and `E` (for derivative works), plus any `additional_tags`
        - NKBIP-08: `C` (collection), `T` (title), `v` (version if specified)
      - **Book/Title events (kind 30040)**:
        - NKBIP-01: `type`, `auto-update`

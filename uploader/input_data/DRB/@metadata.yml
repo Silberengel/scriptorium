@@ -1,0 +1,23 @@
+title: Douay-Rheims Bible
+author: Challoner
+language: en
+collection_id: drb
+has_collection: true
+levels:
+  collection: Collection
+  book: Book
+  chapter: Chapter
+  verse: Verse
+wikistr_mappings: []
+use_bookstr: true
+book_title_mapping_file: book_title_map.yml
+book_metadata: []
+type: bible
+auto_update: ask
+source: public domain
+image: https://i.nostr.build/4xYNbjQ6mjh3syKa.jpg
+additional_tags: []
+derivative_author: null
+derivative_event: null
+derivative_relay: null
+derivative_pubkey: null

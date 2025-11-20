@@ -87,7 +87,7 @@ def serialize_bookstr(
     language: str = "en",
     use_bookstr: bool = True,
     book_title_map: dict[str, dict[str, str] | str] | None = None,  # Supports both new format (dict) and old format (str)
-    metadata: Any | None = None,  # Metadata object with title, author, publisher, year, description
+    metadata: Any | None = None,  # Metadata object with title, author, published_by, published_on, summary, etc.
 ) -> List[Event]:
     """
     Convert generic multi-level CollectionTree into bookstr-like events:
@@ -133,8 +133,6 @@ def serialize_bookstr(
                 tags = [[t[0], t[1]] if t[0] != "title" else ["title", metadata.title] for t in tags]
             if hasattr(metadata, "author") and metadata.author:
                 tags.append(["author", metadata.author])
-            if hasattr(metadata, "publisher") and metadata.publisher:
-                tags.append(["publisher", metadata.publisher])
             if hasattr(metadata, "published_on") and metadata.published_on:
                 tags.append(["published_on", str(metadata.published_on)])
             if hasattr(metadata, "published_by") and metadata.published_by:
@@ -179,6 +177,14 @@ def serialize_bookstr(
         if metadata and hasattr(metadata, "auto_update") and metadata.auto_update:
             auto_update_val = metadata.auto_update
         tags.append(["auto-update", auto_update_val])
+        
+        # Add image and summary to ALL events (unless overridden at chapter/section level)
+        # TODO: Support chapter/section-level overrides in the future
+        if metadata:
+            if hasattr(metadata, "image") and metadata.image:
+                tags.append(["image", metadata.image])
+            if hasattr(metadata, "summary") and metadata.summary:
+                tags.append(["summary", metadata.summary])
         
         # Add NKBIP-08 tags for book wikilinks (hierarchical - each level includes parent tags)
         # Per NKBIP-08 spec:
@@ -449,6 +455,14 @@ def serialize_bookstr(
         # Add type tag (formatting hint for clients, default to "book")
         pub_type = metadata.type if metadata and hasattr(metadata, "type") and metadata.type else "book"
         s_tags.append(["type", pub_type])
+        
+        # Add image and summary to ALL events (unless overridden at chapter/section level)
+        # TODO: Support chapter/section-level overrides in the future
+        if metadata:
+            if hasattr(metadata, "image") and metadata.image:
+                s_tags.append(["image", metadata.image])
+            if hasattr(metadata, "summary") and metadata.summary:
+                s_tags.append(["summary", metadata.summary])
         
         # Add NKBIP-08 tags for book wikilinks (for verse content events - hierarchical: C, T, c, s)
         # C tag (collection) - add to ALL events if collection_id is defined
