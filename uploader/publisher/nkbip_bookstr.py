@@ -65,7 +65,8 @@ def serialize_bookstr(
     - Emit unique index events (kind 30040) for each path prefix
     """
     events: List[Event] = []
-    emitted: Set[str] = set()
+    emitted: Set[str] = set()  # Track emitted d-tags for index events (kind 30040)
+    emitted_verse_d_tags: Set[str] = set()  # Track emitted d-tags for verse content events (kind 30041)
     d_tag_to_parent_d: Dict[str, str] = {}  # Track parent d-tags for a-tag generation
     parent_section_count: Dict[str, int] = {}  # Track section count per parent for unique d-tags
 
@@ -266,6 +267,14 @@ def serialize_bookstr(
 
         # Emit verse content (kind 30041)
         verse_d = _d_for(collection_id, *titles)
+        
+        # Check if this d-tag has already been emitted (deduplicate)
+        if verse_d in emitted_verse_d_tags:
+            # Skip duplicate verse - this can happen if the same verse appears multiple times
+            # in the document structure. We'll keep the first occurrence.
+            continue
+        
+        emitted_verse_d_tags.add(verse_d)
         verse_title = titles[-1]
         # NKBIP-01 requires "title" tag (not "t") for kind 30041
         s_tags = [["d", verse_d], ["title", verse_title], ["L", language], ["m", "text/asciidoc"]]
