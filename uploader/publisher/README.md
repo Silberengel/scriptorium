@@ -153,19 +153,39 @@ Step-by-step workflow
    - `python -m uploader.publisher.cli all --input uploader/input_data/{collection_slug}/publication.html --source-type HTML`
    - Runs generate → publish → qc in sequence.
 
-9) Broadcast publication to another relay
-   - `python -m uploader.publisher.scripts.broadcast_publication <nevent> <relay_url> [--key SCRIPTORIUM_KEY]`
-   - Takes the nevent of the top-level 30040 event
+9) Read/View publication from a relay
+   - `python -m uploader.publisher.scripts.read_publication <event_ref> <relay_url>`
+   - `event_ref` can be:
+     - `nevent` (bech32 encoded event reference)
+     - `naddr` (bech32 encoded address: kind:pubkey:d-tag)
+     - `hex event ID` (64 hex characters)
+     - `kind:pubkey:d-tag` (colon-separated format)
+   - Recursively fetches all child events via a-tags
+   - Outputs publication data as JSON for display
+   - If no relay hint is provided or event not found, falls back to `wss://thecitadel.nostr1.com`
+   - Example: `python -m uploader.publisher.scripts.read_publication nevent1qqs... wss://relay.example.com`
+
+10) Broadcast publication to another relay
+   - `python -m uploader.publisher.scripts.broadcast_publication <event_ref> <relay_url> [--key SCRIPTORIUM_KEY]`
+   - `event_ref` can be:
+     - `nevent` (bech32 encoded event reference)
+     - `naddr` (bech32 encoded address: kind:pubkey:d-tag)
+     - `hex event ID` (64 hex characters)
    - Recursively fetches all child events via a-tags
    - Publishes all events to the specified relay (ws:// or wss://)
+   - If no relay hint is provided or event not found, falls back to `wss://thecitadel.nostr1.com`
    - Example: `python -m uploader.publisher.scripts.broadcast_publication nevent1qqs... wss://relay.example.com`
 
-10) Delete publication from a relay
-   - `python -m uploader.publisher.scripts.delete_publication <nevent> <relay_url> [--key SCRIPTORIUM_KEY]`
-   - Takes the nevent of the top-level 30040 event
+11) Delete publication from a relay
+   - `python -m uploader.publisher.scripts.delete_publication <event_ref> <relay_url> [--key SCRIPTORIUM_KEY]`
+   - `event_ref` can be:
+     - `nevent` (bech32 encoded event reference)
+     - `naddr` (bech32 encoded address: kind:pubkey:d-tag)
+     - `hex event ID` (64 hex characters)
    - Recursively fetches all child events via a-tags
    - Creates deletion events (kind 5) for all events
    - Requires confirmation by typing "DELETE"
+   - If no relay hint is provided or event not found, falls back to `wss://thecitadel.nostr1.com`
    - Example: `python -m uploader.publisher.scripts.delete_publication nevent1qqs... wss://relay.example.com`
 
 Commands
@@ -178,8 +198,13 @@ Commands
 
 Scripts
 -------
-- broadcast_publication: broadcast an entire publication to a relay (takes nevent)
-- delete_publication: delete an entire publication from a relay (takes nevent)
+- read_publication: read and display a publication from a relay (takes nevent/naddr/hex-id)
+- broadcast_publication: broadcast an entire publication to a relay (takes nevent/naddr/hex-id)
+- delete_publication: delete an entire publication from a relay (takes nevent/naddr/hex-id)
+
+All scripts support multiple event reference formats (nevent, naddr, hex event ID) and include
+automatic fallback to `wss://thecitadel.nostr1.com` if no relay hint is provided or if the event
+is not found on the specified relay.
 
 Environment
 -----------
