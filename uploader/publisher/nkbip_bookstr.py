@@ -8,6 +8,36 @@ from .parse_collection import CollectionTree, SectionEntry
 from .util import slugify_strict, compress_slug_parts, sha256_hex
 
 
+def normalize_nkbip08_tag_value(text: str) -> str:
+    """
+    Normalize tag values according to NKBIP-08 (NIP-54 rules):
+    - Convert any non-letter character to a hyphen
+    - Convert all letters to lowercase
+    - Numbers are preserved (not converted to hyphens)
+    - Remove quotes
+    - Collapse multiple hyphens to single hyphen
+    - Trim leading/trailing hyphens
+    """
+    if not text:
+        return ""
+    # Remove quotes
+    text = text.strip().strip('"\'')
+    # Normalize: lowercase, convert non-letter non-number to hyphen
+    normalized = ""
+    for char in text:
+        if char.isalnum():
+            normalized += char.lower()
+        else:
+            # Non-alphanumeric becomes hyphen (but don't add consecutive hyphens)
+            if normalized and normalized[-1] != "-":
+                normalized += "-"
+    # Collapse multiple hyphens
+    normalized = re.sub(r"-+", "-", normalized)
+    # Trim leading/trailing hyphens
+    normalized = normalized.strip("-")
+    return normalized
+
+
 @dataclass
 class Event:
     kind: int
@@ -82,17 +112,7 @@ def serialize_bookstr(
         if len(d_path) > 1:
             parent_d = _d_for(collection_id, *d_path[:-1])
             d_tag_to_parent_d[d] = parent_d
-        if use_bookstr and book_title_map and maybe_book_title:
-            # Case-insensitive lookup
-            canon_info = book_title_map.get(maybe_book_title.lower())
-            if canon_info:
-                # Support both old format (string) and new format (dict)
-                if isinstance(canon_info, dict):
-                    canon = canon_info.get("canonical-long", "")
-                else:
-                    canon = str(canon_info)
-                if canon:
-                    tags.append(["name", canon])
+        # Note: "name" tag removed - using NKBIP-08 T tag instead
         
         # Get publication type from metadata (default to "book")
         pub_type = "book"
@@ -154,45 +174,79 @@ def serialize_bookstr(
             auto_update_val = metadata.auto_update
         tags.append(["auto-update", auto_update_val])
         
-        # Add bookstr macro tags for book and chapter index events
-        if use_bookstr and (is_book or is_chapter):
-            
-            # Add book tag if this is a book or chapter event
-            if maybe_book_title:
-                canon_info = None
+        # Add NKBIP-08 tags for book wikilinks (hierarchical - each level includes parent tags)
+        # C tag (collection) - add to ALL events if collection_id is defined
+        if collection_id:
+            c_tag_value = normalize_nkbip08_tag_value(collection_id)
+            if c_tag_value:
+                tags.append(["C", c_tag_value])
+        
+        # T tag (title) - for title/book events (collection root or book index)
+        if is_collection_root or is_book:
+            t_tag_value = None
+            if is_collection_root and metadata and hasattr(metadata, "title") and metadata.title:
+                # Collection root uses metadata title
+                t_tag_value = normalize_nkbip08_tag_value(metadata.title)
+            elif is_book and maybe_book_title:
+                # Book index uses canonical name if available, otherwise display title
                 if book_title_map:
-                    # Case-insensitive lookup
                     canon_info = book_title_map.get(maybe_book_title.lower())
-                if canon_info:
-                    # Support both old format (string) and new format (dict)
-                    if isinstance(canon_info, dict):
-                        canon_long = canon_info.get("canonical-long", "")
-                        canon_short = canon_info.get("canonical-short", "")
-                        if canon_long:
-                            book_tag_long = slugify_strict(canon_long).lower()
-                            tags.append(["book", book_tag_long])
-                        if canon_short and canon_short != canon_long:
-                            book_tag_short = slugify_strict(canon_short).lower()
-                            tags.append(["book", book_tag_short])
-                    else:
-                        # Old format: single canonical name
-                        canon = str(canon_info)
-                        book_tag = slugify_strict(canon).lower()
-                        tags.append(["book", book_tag])
-                else:
-                    book_tag = slugify_strict(maybe_book_title).lower()
-                    tags.append(["book", book_tag])
+                    if canon_info:
+                        if isinstance(canon_info, dict):
+                            canon_long = canon_info.get("canonical-long", "")
+                            if canon_long:
+                                t_tag_value = normalize_nkbip08_tag_value(canon_long)
+                        else:
+                            t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
+                if not t_tag_value:
+                    t_tag_value = normalize_nkbip08_tag_value(maybe_book_title)
+            if t_tag_value:
+                tags.append(["T", t_tag_value])
+        
+        # For chapter events, we need to inherit T tag from parent book
+        # We'll compute it from the path structure
+        if is_chapter:
+            # Find book title from path (parent of chapter)
+            if len(d_path) > 0:
+                # The book should be at the level before chapter
+                # For now, we'll try to find it from maybe_book_title or from the path
+                book_title_for_t = maybe_book_title
+                if not book_title_for_t and len(d_path) > 1:
+                    # Try to get book title from parent path
+                    book_title_for_t = d_path[-2] if len(d_path) >= 2 else None
+                
+                if book_title_for_t:
+                    t_tag_value = None
+                    if book_title_map:
+                        canon_info = book_title_map.get(book_title_for_t.lower())
+                        if canon_info:
+                            if isinstance(canon_info, dict):
+                                canon_long = canon_info.get("canonical-long", "")
+                                if canon_long:
+                                    t_tag_value = normalize_nkbip08_tag_value(canon_long)
+                            else:
+                                t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
+                    if not t_tag_value:
+                        t_tag_value = normalize_nkbip08_tag_value(book_title_for_t)
+                    if t_tag_value:
+                        tags.append(["T", t_tag_value])
             
-            # Add chapter tag if this is a chapter event
-            if is_chapter:
-                chapter_match = re.search(r'chapter\s+(\d+)', title, re.IGNORECASE)
-                if chapter_match:
-                    chapter_num = chapter_match.group(1)
-                    tags.append(["chapter", chapter_num])
-            
-            # Add version tag if available
-            if metadata and hasattr(metadata, "version") and metadata.version:
-                tags.append(["version", metadata.version.lower()])
+            # c tag (chapter) - for chapter index events
+            chapter_match = re.search(r'chapter\s+(\d+)', title, re.IGNORECASE)
+            if chapter_match:
+                chapter_num = chapter_match.group(1)
+                c_tag_value = normalize_nkbip08_tag_value(chapter_num)
+            else:
+                # Use normalized title as chapter identifier
+                c_tag_value = normalize_nkbip08_tag_value(title)
+            if c_tag_value:
+                tags.append(["c", c_tag_value])
+        
+        # v tag (version) - add to ALL events when version is specified
+        if metadata and hasattr(metadata, "version") and metadata.version:
+            v_tag_value = normalize_nkbip08_tag_value(metadata.version)
+            if v_tag_value:
+                tags.append(["v", v_tag_value])
         
         events.append(Event(kind=30040, tags=tags, content=""))
 
@@ -249,13 +303,73 @@ def serialize_bookstr(
             verse_title = titles[-1] if titles else "Section"
             s_tags = [["d", verse_d], ["title", verse_title], ["L", language], ["m", "text/asciidoc"]]
             
-            # Add type tag
+            # Add type tag (formatting hint for clients, default to "book")
             pub_type = metadata.type if metadata and hasattr(metadata, "type") and metadata.type else "book"
             s_tags.append(["type", pub_type])
             
-            # Add version tag if available
+            # Add NKBIP-08 tags for section content events (hierarchical - include parent tags)
+            # C tag (collection) - add to ALL events if collection_id is defined
+            if collection_id:
+                c_tag_value = normalize_nkbip08_tag_value(collection_id)
+                if c_tag_value:
+                    s_tags.append(["C", c_tag_value])
+            
+            # T tag (title) - try to find book title from parent path
+            if len(titles) > 0:
+                # Try to find book title (usually at index 0 or 1)
+                book_title_for_tag = None
+                for i, t in enumerate(titles):
+                    # Heuristic: if we have a book_title_map, check if this title matches
+                    if book_title_map and t.lower() in book_title_map:
+                        book_title_for_tag = t
+                        break
+                if not book_title_for_tag and len(titles) > 0:
+                    book_title_for_tag = titles[0]  # Use first title as fallback
+                
+                if book_title_for_tag:
+                    t_tag_value = None
+                    if book_title_map:
+                        canon_info = book_title_map.get(book_title_for_tag.lower())
+                        if canon_info:
+                            if isinstance(canon_info, dict):
+                                canon_long = canon_info.get("canonical-long", "")
+                                if canon_long:
+                                    t_tag_value = normalize_nkbip08_tag_value(canon_long)
+                            else:
+                                t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
+                    if not t_tag_value:
+                        t_tag_value = normalize_nkbip08_tag_value(book_title_for_tag)
+                    if t_tag_value:
+                        s_tags.append(["T", t_tag_value])
+            
+            # c tag (chapter) - try to find chapter from parent path if available
+            # Look for a title that contains "chapter" in the path (excluding the last one which is the section)
+            if len(titles) > 1:
+                for i in range(len(titles) - 1):
+                    chapter_title = titles[i]
+                    if "chapter" in chapter_title.lower():
+                        # Extract chapter number from title
+                        chapter_match = re.search(r'chapter\s+(\d+)', chapter_title, re.IGNORECASE)
+                        if chapter_match:
+                            chapter_num = chapter_match.group(1)
+                            c_tag_value = normalize_nkbip08_tag_value(chapter_num)
+                        else:
+                            # Use normalized title as chapter identifier
+                            c_tag_value = normalize_nkbip08_tag_value(chapter_title)
+                        if c_tag_value:
+                            s_tags.append(["c", c_tag_value])
+                        break  # Use first chapter found
+            
+            # s tag (section) - from section title
+            s_tag_value = normalize_nkbip08_tag_value(verse_title)
+            if s_tag_value:
+                s_tags.append(["s", s_tag_value])
+            
+            # v tag (version) - add to ALL events when version is specified
             if metadata and hasattr(metadata, "version") and metadata.version:
-                s_tags.append(["version", metadata.version.lower()])
+                v_tag_value = normalize_nkbip08_tag_value(metadata.version)
+                if v_tag_value:
+                    s_tags.append(["v", v_tag_value])
             
             # Track parent d-tag for a-tag generation
             if parent_d_tag:
@@ -312,71 +426,68 @@ def serialize_bookstr(
             parent_d = _d_for(collection_id, *titles[:chapter_idx + 1])
             d_tag_to_parent_d[verse_d] = parent_d
         
-        # Add bookstr macro tags for searchability
-        if use_bookstr:
-            # Add type tag from metadata (default to "book")
-            pub_type = metadata.type if metadata and hasattr(metadata, "type") and metadata.type else "book"
-            s_tags.append(["type", pub_type])
-            
-            # Extract and add book tag (canonical name, lowercase, hyphenated)
-            if book_idx >= 0 and book_idx < len(titles):
-                book_title = titles[book_idx]
-                canon_info = None
-                if book_title_map:
-                    # Case-insensitive lookup
-                    canon_info = book_title_map.get(book_title.lower())
+        # Add type tag (formatting hint for clients, default to "book")
+        pub_type = metadata.type if metadata and hasattr(metadata, "type") and metadata.type else "book"
+        s_tags.append(["type", pub_type])
+        
+        # Add NKBIP-08 tags for book wikilinks (for verse content events - hierarchical: C, T, c, s)
+        # C tag (collection) - add to ALL events if collection_id is defined
+        if collection_id:
+            c_tag_value = normalize_nkbip08_tag_value(collection_id)
+            if c_tag_value:
+                s_tags.append(["C", c_tag_value])
+        
+        # T tag (title/book) - from book title
+        if book_idx >= 0 and book_idx < len(titles):
+            book_title = titles[book_idx]
+            t_tag_value = None
+            if book_title_map:
+                canon_info = book_title_map.get(book_title.lower())
                 if canon_info:
-                    # Support both old format (string) and new format (dict)
                     if isinstance(canon_info, dict):
                         canon_long = canon_info.get("canonical-long", "")
-                        canon_short = canon_info.get("canonical-short", "")
                         if canon_long:
-                            book_tag_long = slugify_strict(canon_long).lower()
-                            s_tags.append(["book", book_tag_long])
-                        if canon_short and canon_short != canon_long:
-                            book_tag_short = slugify_strict(canon_short).lower()
-                            s_tags.append(["book", book_tag_short])
+                            t_tag_value = normalize_nkbip08_tag_value(canon_long)
                     else:
-                        # Old format: single canonical name
-                        canon = str(canon_info)
-                        book_tag = slugify_strict(canon).lower()
-                        s_tags.append(["book", book_tag])
-                else:
-                    # Fallback to display title
-                    book_tag = slugify_strict(book_title).lower()
-                    s_tags.append(["book", book_tag])
-            
-            # Extract and add chapter tag
-            if chapter_idx >= 0 and chapter_idx < len(titles):
-                chapter_title = titles[chapter_idx]
-                # Extract chapter number from title like "Genesis Chapter 1" or "1 Kings Chapter 1" or just "Chapter 1"
-                chapter_match = re.search(r'chapter\s+(\d+)', chapter_title, re.IGNORECASE)
-                if chapter_match:
-                    chapter_num = chapter_match.group(1)
-                    s_tags.append(["chapter", chapter_num])
-            
-            # Extract and add verse tag (if verse title matches verse pattern like "1:1" or "1:2")
-            verse_match = re.match(r'^(\d+):(\d+)$', verse_title.strip())
-            if verse_match:
-                verse_num = verse_match.group(2)  # Just the verse number
-                s_tags.append(["verse", verse_num])
-            
-            # Add version tag if available in metadata
-            if metadata and hasattr(metadata, "version") and metadata.version:
-                s_tags.append(["version", metadata.version.lower()])
+                        t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
+            if not t_tag_value:
+                t_tag_value = normalize_nkbip08_tag_value(book_title)
+            if t_tag_value:
+                s_tags.append(["T", t_tag_value])
         
-        # Legacy name tag (for backward compatibility)
-        if use_bookstr and book_title_map and len(titles) >= 2:
-            # Case-insensitive lookup
-            canon_info = book_title_map.get(titles[book_idx].lower()) if book_idx < len(titles) else None
-            if canon_info:
-                # Support both old format (string) and new format (dict)
-                if isinstance(canon_info, dict):
-                    canon = canon_info.get("canonical-long", "")
-                else:
-                    canon = str(canon_info)
-                if canon:
-                    s_tags.append(["name", canon])
+        # c tag (chapter) - from chapter
+        if chapter_idx >= 0 and chapter_idx < len(titles):
+            chapter_title = titles[chapter_idx]
+            # Extract chapter number from title
+            chapter_match = re.search(r'chapter\s+(\d+)', chapter_title, re.IGNORECASE)
+            if chapter_match:
+                chapter_num = chapter_match.group(1)
+                c_tag_value = normalize_nkbip08_tag_value(chapter_num)
+            else:
+                # Use normalized title as chapter identifier
+                c_tag_value = normalize_nkbip08_tag_value(chapter_title)
+            if c_tag_value:
+                s_tags.append(["c", c_tag_value])
+        
+        # s tag (section/verse) - from verse number or title
+        # Extract verse number from verse title (e.g., "1:1" -> "1", "2:4" -> "4")
+        verse_match = re.match(r'^(\d+):(\d+)$', verse_title.strip())
+        if verse_match:
+            verse_num = verse_match.group(2)  # Just the verse number
+            s_tag_value = normalize_nkbip08_tag_value(verse_num)
+        else:
+            # Use normalized title as section identifier
+            s_tag_value = normalize_nkbip08_tag_value(verse_title)
+        if s_tag_value:
+            s_tags.append(["s", s_tag_value])
+        
+        # v tag (version) - add to ALL events when version is specified
+        if metadata and hasattr(metadata, "version") and metadata.version:
+            v_tag_value = normalize_nkbip08_tag_value(metadata.version)
+            if v_tag_value:
+                s_tags.append(["v", v_tag_value])
+        
+        # Note: "name" tag removed - using NKBIP-08 T tag instead
         
         events.append(Event(kind=30041, tags=s_tags, content=entry.content))
 

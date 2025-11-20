@@ -105,11 +105,12 @@ Step-by-step workflow
 5) Generate final artifacts (AsciiDoc → indexes + events)
    - Re-run generate to apply metadata/mappings:
      - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML --promote-default-structure [--ascii-only]`
-     - Events are generated with NKBIP-01 compliant tags:
-     - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, `auto-update`, `source`, `image` (if specified), `p` and `E` (for derivative works), plus any `additional_tags`
-     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true` and version specified), `auto-update`
-     - Verse content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true` and version specified)
+     - Events are generated with NKBIP-01 and NKBIP-08 compliant tags:
+     - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, `auto-update`, `source`, `image` (if specified), `p` and `E` (for derivative works), plus NKBIP-08 tags `C` (collection), `T` (title), `v` (version if specified), plus any `additional_tags`
+     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true` and version specified), `auto-update`, plus NKBIP-08 tags `T` (title for book), `c` (chapter for chapter index), `v` (version if specified)
+     - Verse content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true` and version specified), plus NKBIP-08 tags `C` (collection), `T` (title/book), `c` (chapter), `s` (section/verse), `v` (version if specified)
      - All index events (kind 30040) include `a` tags referencing their child events in format `["a", "<kind:pubkey:dtag>", "<relay hint>", "<event id>"]` (added during publishing)
+     - NKBIP-08 tags enable book wikilink resolution (e.g., `[[book::genesis 2:4 | kjv]]`)
    - Outputs:
      - `uploader/publisher/out/events/events.ndjson` (serialized events ready for publishing)
      - `uploader/publisher/out/cache/event_index.json` (quick index)
