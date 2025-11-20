@@ -11,24 +11,29 @@ from .util import slugify_strict, compress_slug_parts, sha256_hex
 def normalize_nkbip08_tag_value(text: str) -> str:
     """
     Normalize tag values according to NKBIP-08 (NIP-54 rules):
+    - Remove quotes
     - Convert any non-letter character to a hyphen
     - Convert all letters to lowercase
     - Numbers are preserved (not converted to hyphens)
-    - Remove quotes
     - Collapse multiple hyphens to single hyphen
     - Trim leading/trailing hyphens
+    
+    IMPORTANT: This handles hierarchical paths with colons (e.g., "part-1:question-2:article-3")
+    by converting colons to hyphens, resulting in "part-1-question-2-article-3" as per NKBIP-08 spec.
     """
     if not text:
         return ""
-    # Remove quotes
+    # Remove quotes (single and double)
     text = text.strip().strip('"\'')
     # Normalize: lowercase, convert non-letter non-number to hyphen
+    # Per NKBIP-08: "Section identifiers cannot contain colons in tag values.
+    # Hierarchical paths with colons MUST be normalized: colons → hyphens"
     normalized = ""
     for char in text:
         if char.isalnum():
             normalized += char.lower()
         else:
-            # Non-alphanumeric becomes hyphen (but don't add consecutive hyphens)
+            # Non-alphanumeric (including colons) becomes hyphen (but don't add consecutive hyphens)
             if normalized and normalized[-1] != "-":
                 normalized += "-"
     # Collapse multiple hyphens
@@ -99,6 +104,7 @@ def serialize_bookstr(
     emitted_verse_d_tags: Set[str] = set()  # Track emitted d-tags for verse content events (kind 30041)
     d_tag_to_parent_d: Dict[str, str] = {}  # Track parent d-tags for a-tag generation
     parent_section_count: Dict[str, int] = {}  # Track section count per parent for unique d-tags
+    d_tag_to_event_type: Dict[str, str] = {}  # Track event type: "book" (T-level), "chapter" (c-level), or "collection"
 
     def emit_index(d_path: List[str], title: str, maybe_book_title: str | None = None, is_collection_root: bool = False, is_book: bool = False, is_chapter: bool = False):
         d = _d_for(collection_id, *d_path)
@@ -175,6 +181,12 @@ def serialize_bookstr(
         tags.append(["auto-update", auto_update_val])
         
         # Add NKBIP-08 tags for book wikilinks (hierarchical - each level includes parent tags)
+        # Per NKBIP-08 spec:
+        # - T tag is MANDATORY (only T tag must be present)
+        # - C, c, s, v tags are optional
+        # - All tags MAY be repeated to support multiple aliases (optional feature)
+        # - Tag values MUST contain only lowercase ASCII letters, numbers, and hyphens
+        # - Hierarchical paths with colons are normalized (colons → hyphens)
         # C tag (collection) - add to ALL events if collection_id is defined
         if collection_id:
             c_tag_value = normalize_nkbip08_tag_value(collection_id)
@@ -247,6 +259,14 @@ def serialize_bookstr(
             v_tag_value = normalize_nkbip08_tag_value(metadata.version)
             if v_tag_value:
                 tags.append(["v", v_tag_value])
+        
+        # Track event type for a-tag filtering (per NKBIP-08: T-level events should only contain c-level events)
+        if is_book:
+            d_tag_to_event_type[d] = "book"  # T-level event
+        elif is_chapter:
+            d_tag_to_event_type[d] = "chapter"  # c-level event
+        elif is_collection_root:
+            d_tag_to_event_type[d] = "collection"  # Collection root
         
         events.append(Event(kind=30040, tags=tags, content=""))
 
@@ -521,9 +541,16 @@ def serialize_bookstr(
             parent_d_to_children[parent_d].append((event.kind, d_tag))
     
     # Add a-tags to kind 30040 events (index events)
+    # Per NKBIP-08: T-level events (book/title) SHOULD only contain other 30040 events (chapters)
+    # c-level events (chapter) SHOULD contain at least one 30041 event and MAY contain 30040 events (subchapters)
     # Use placeholder pubkey "0000000000000000000000000000000000000000000000000000000000000000"
     # This will be replaced with the actual pubkey during publishing
     PLACEHOLDER_PUBKEY = "0000000000000000000000000000000000000000000000000000000000000000"
+    
+    # Track which T-level events need a Preamble chapter
+    book_d_to_preamble_d: Dict[str, str] = {}  # Maps book d-tag to preamble chapter d-tag
+    
+    # First pass: identify T-level events with direct 30041 children and create Preamble chapters
     for event in events:
         if event.kind == 30040:
             d_tag = None
@@ -532,16 +559,138 @@ def serialize_bookstr(
                     d_tag = tag[1] if len(tag) > 1 else None
                     break
             
-            # Add a-tags for all children of this index event
+            if d_tag and d_tag in parent_d_to_children:
+                event_type = d_tag_to_event_type.get(d_tag, "unknown")
+                
+                # Check if this T-level event has direct 30041 children
+                if event_type == "book":
+                    direct_30041_children = [
+                        (child_kind, child_d) 
+                        for child_kind, child_d in parent_d_to_children[d_tag]
+                        if child_kind == 30041
+                    ]
+                    
+                    if direct_30041_children:
+                        # Create a Preamble chapter for this book
+                        # Preamble d-tag: book_d_tag + "-preamble"
+                        preamble_d = f"{d_tag}-preamble"
+                        book_d_to_preamble_d[d_tag] = preamble_d
+                        
+                        # Create the Preamble chapter event (30040)
+                        preamble_pub_type = metadata.type if metadata and hasattr(metadata, "type") and metadata.type else "book"
+                        preamble_tags = [
+                            ["d", preamble_d],
+                            ["title", "Preamble"],
+                            ["L", language],
+                            ["m", "text/asciidoc"],
+                            ["type", preamble_pub_type],
+                            ["auto-update", "ask"],
+                        ]
+                        
+                        # Add NKBIP-08 tags for Preamble chapter
+                        # C tag (collection) - if collection_id is defined
+                        if collection_id:
+                            c_tag_value = normalize_nkbip08_tag_value(collection_id)
+                            if c_tag_value:
+                                preamble_tags.append(["C", c_tag_value])
+                        
+                        # T tag (title) - inherit from parent book
+                        # Find the book title from the book event's T tag
+                        book_t_tag = None
+                        for tag in event.tags:
+                            if tag and len(tag) > 0 and tag[0] == "T":
+                                book_t_tag = tag[1] if len(tag) > 1 else None
+                                break
+                        if book_t_tag:
+                            preamble_tags.append(["T", book_t_tag])
+                        
+                        # c tag (chapter) - "preamble"
+                        preamble_tags.append(["c", "preamble"])
+                        
+                        # v tag (version) - if version is specified
+                        if metadata and hasattr(metadata, "version") and metadata.version:
+                            v_tag_value = normalize_nkbip08_tag_value(metadata.version)
+                            if v_tag_value:
+                                preamble_tags.append(["v", v_tag_value])
+                        
+                        # Track parent relationship
+                        d_tag_to_parent_d[preamble_d] = d_tag
+                        d_tag_to_event_type[preamble_d] = "chapter"
+                        
+                        # Create and add the Preamble event
+                        preamble_event = Event(kind=30040, tags=preamble_tags, content="")
+                        events.append(preamble_event)
+                        
+                        # Update parent references for the 30041 children to point to Preamble
+                        for child_kind, child_d in direct_30041_children:
+                            # Find the child event and update its parent reference
+                            for child_event in events:
+                                child_d_tag = None
+                                for tag in child_event.tags:
+                                    if tag and len(tag) > 0 and tag[0] == "d":
+                                        child_d_tag = tag[1] if len(tag) > 1 else None
+                                        break
+                                
+                                if child_d_tag == child_d:
+                                    # Update _parent_d tag to point to Preamble
+                                    for i, tag in enumerate(child_event.tags):
+                                        if tag and len(tag) > 0 and tag[0] == "_parent_d":
+                                            child_event.tags[i] = ["_parent_d", preamble_d]
+                                            break
+                                    else:
+                                        # Add _parent_d tag if not present
+                                        child_event.tags.append(["_parent_d", preamble_d])
+                                    
+                                    # Update d_tag_to_parent_d mapping
+                                    d_tag_to_parent_d[child_d] = preamble_d
+                                    
+                                    # Update parent_d_to_children mapping
+                                    # Remove from book's children
+                                    if d_tag in parent_d_to_children:
+                                        parent_d_to_children[d_tag] = [
+                                            (k, d) for k, d in parent_d_to_children[d_tag]
+                                            if not (k == child_kind and d == child_d)
+                                        ]
+                                    
+                                    # Add to Preamble's children
+                                    if preamble_d not in parent_d_to_children:
+                                        parent_d_to_children[preamble_d] = []
+                                    parent_d_to_children[preamble_d].append((child_kind, child_d))
+                                    break
+    
+    # Second pass: add a-tags to all 30040 events
+    for event in events:
+        if event.kind == 30040:
+            d_tag = None
+            for tag in event.tags:
+                if tag and len(tag) > 0 and tag[0] == "d":
+                    d_tag = tag[1] if len(tag) > 1 else None
+                    break
+            
+            # Add a-tags for children of this index event
             # Format per NKBIP-01: ["a", "<kind:pubkey:dtag>", "<relay hint>", "<event id>"]
             # Relay hint and event id are optional, but we support the format
             if d_tag and d_tag in parent_d_to_children:
+                event_type = d_tag_to_event_type.get(d_tag, "unknown")
+                
                 for child_kind, child_d in parent_d_to_children[d_tag]:
+                    # Per NKBIP-08: T-level events (book/title) should ONLY contain c-level events (30040)
+                    # If this is a book with direct 30041 children, they should now be under Preamble
+                    if event_type == "book" and child_kind == 30041:
+                        # This shouldn't happen after Preamble creation, but skip just in case
+                        continue
+                    
                     # Format: ["a", "<kind>:<pubkey>:<d-tag>", "<relay hint>", "<event id>"]
                     # Relay hint and event id are optional - we'll use empty strings as placeholders
                     # The actual event IDs will be filled in after events are published
                     a_tag = ["a", f"{child_kind}:{PLACEHOLDER_PUBKEY}:{child_d}", "", ""]
                     event.tags.append(a_tag)
+            
+            # If this is a book that has a Preamble, add the Preamble to its a-tags
+            if d_tag in book_d_to_preamble_d:
+                preamble_d = book_d_to_preamble_d[d_tag]
+                a_tag = ["a", f"30040:{PLACEHOLDER_PUBKEY}:{preamble_d}", "", ""]
+                event.tags.append(a_tag)
 
     return events
 
