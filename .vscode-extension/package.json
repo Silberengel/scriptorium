@@ -1,0 +1,149 @@
+{
+  "name": "scriptorium-publisher",
+  "displayName": "Scriptorium Publisher",
+  "description": "GUI for Scriptorium - Publish books and publications to Nostr",
+  "version": "0.1.0",
+  "publisher": "silberengel",
+  "icon": "icon.png",
+  "license": "MIT",
+  "homepage": "https://jumble.imwald.eu/users/npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z",
+  "bugs": {
+    "url": "https://jumble.imwald.eu/users/npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z"
+  },
+  "keywords": [
+    "nostr",
+    "publishing",
+    "books",
+    "nkbip-01",
+    "nkbip-08",
+    "scriptorium"
+  ],
+  "categories": [
+    "Other",
+    "Publishing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/silberengel/scriptorium.git"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "scriptorium.initMetadata",
+        "title": "Scriptorium: Initialize Metadata",
+        "icon": "$(file-add)"
+      },
+      {
+        "command": "scriptorium.generate",
+        "title": "Scriptorium: Generate Events",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "scriptorium.publish",
+        "title": "Scriptorium: Publish to Relay",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "scriptorium.qc",
+        "title": "Scriptorium: Quality Control Check",
+        "icon": "$(check)"
+      },
+      {
+        "command": "scriptorium.all",
+        "title": "Scriptorium: Generate & Publish All",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "scriptorium.openPanel",
+        "title": "Scriptorium: Open Publisher Panel",
+        "icon": "$(book)"
+      },
+      {
+        "command": "scriptorium.broadcast",
+        "title": "Scriptorium: Broadcast Publication",
+        "icon": "$(broadcast)"
+      },
+      {
+        "command": "scriptorium.delete",
+        "title": "Scriptorium: Delete Publication",
+        "icon": "$(trash)"
+      }
+    ],
+    "configuration": {
+      "title": "Scriptorium Publisher",
+      "properties": {
+        "scriptorium.relayUrl": {
+          "type": "string",
+          "default": "wss://thecitadel.nostr1.com",
+          "description": "Default Nostr relay URL"
+        },
+        "scriptorium.secretKey": {
+          "type": "string",
+          "default": "",
+          "description": "Nostr secret key (nsec or hex). Leave empty to use SCRIPTORIUM_KEY env var.",
+          "scope": "application"
+        },
+        "scriptorium.outputDir": {
+          "type": "string",
+          "default": "uploader/publisher/out",
+          "description": "Output directory for generated events"
+        },
+        "scriptorium.sourceType": {
+          "type": "string",
+          "enum": ["HTML", "ADOC", "MARKDOWN", "RTF", "EPUB"],
+          "default": "HTML",
+          "description": "Default source type"
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "scriptoriumEvents",
+          "name": "Scriptorium Events",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "scriptorium.openPanel",
+          "when": "view == scriptoriumEvents",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "scriptorium.initMetadata",
+          "when": "resourceExtname == '.html' || resourceExtname == '.adoc'",
+          "group": "scriptorium"
+        },
+        {
+          "command": "scriptorium.generate",
+          "when": "resourceExtname == '.html' || resourceExtname == '.adoc'",
+          "group": "scriptorium"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {}
+}
+
