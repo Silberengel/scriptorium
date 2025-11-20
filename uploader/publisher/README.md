@@ -54,7 +54,14 @@ Step-by-step workflow
        - `published_on`: Publication date (e.g., "2003-05-13" or "1899")
        - `published_by`: Publication source (e.g., "public domain")
        - `summary`: Publication description
-       - `type`: Publication type (default: "book", can be "bible", "illustrated", "magazine", etc.)
+       - `type`: Publication type (default: "book", can be "bible", "illustrated", "magazine", "documentation", "academic", "blog", etc.)
+       - `auto_update`: Auto-update behavior ("yes", "ask", or "no", default: "ask")
+       - `source`: Source URL for the publication
+       - `image`: Image URL for the publication cover
+       - `derivative_author`: Pubkey of original author (for derivative works)
+       - `derivative_event`: Event ID of original event (for derivative works)
+       - `derivative_relay`: Relay URL for original event (optional, for derivative works)
+       - `derivative_pubkey`: Pubkey for original event (optional, defaults to derivative_author if not specified)
      - `language`, `collection_id`, `has_collection`
      
    - **Bookstr Macro Configuration** (`use_bookstr: true`):
@@ -86,25 +93,23 @@ Step-by-step workflow
        If using `book_title_mapping_file`, create that YAML with a list of `{display, canonical}` pairs.
        The canonical names should match what wikistr expects (e.g., "Song of Solomon" not "Song of Songs").
      
-   - Optional additional NKBIP-01 tags (e.g., for cover image, ISBN, topics):
+   - Optional additional NKBIP-01 tags (e.g., for ISBN, topics):
      ```
      additional_tags:
-       - ["image", "https://example.com/cover.jpg"]
        - ["i", "isbn:9780765382030"]
        - ["t", "fables"]
        - ["t", "classical"]
-       - ["source", "https://booksonline.org/"]
      ```
-     Note: Cover images must be hosted on a media server accessible to clients. Add the URL via the `image` tag in `additional_tags`.
+     Note: For cover images and source URLs, use the `image` and `source` fields directly in metadata rather than `additional_tags`.
 
 5) Generate final artifacts (AsciiDoc → indexes + events)
    - Re-run generate to apply metadata/mappings:
      - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML --promote-default-structure [--ascii-only]`
      - Events are generated with NKBIP-01 compliant tags:
-     - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, plus any `additional_tags`
-     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true` and version specified)
+     - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, `auto-update`, `source`, `image` (if specified), `p` and `E` (for derivative works), plus any `additional_tags`
+     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true` and version specified), `auto-update`
      - Verse content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true` and version specified)
-     - All index events (kind 30040) include `a` tags referencing their child events (added during publishing)
+     - All index events (kind 30040) include `a` tags referencing their child events in format `["a", "<kind:pubkey:dtag>", "<relay hint>", "<event id>"]` (added during publishing)
    - Outputs:
      - `uploader/publisher/out/events/events.ndjson` (serialized events ready for publishing)
      - `uploader/publisher/out/cache/event_index.json` (quick index)

@@ -115,6 +115,28 @@ def serialize_bookstr(
                 tags.append(["published_by", str(metadata.published_by)])
             if hasattr(metadata, "summary") and metadata.summary:
                 tags.append(["summary", metadata.summary])
+            if hasattr(metadata, "source") and metadata.source:
+                tags.append(["source", metadata.source])
+            if hasattr(metadata, "image") and metadata.image:
+                tags.append(["image", metadata.image])
+            
+            # Add derivative works tags (p and E) if specified
+            # Per NKBIP-01: p tag identifies original author, E tag immediately follows with original event reference
+            if hasattr(metadata, "derivative_author") and metadata.derivative_author:
+                tags.append(["p", metadata.derivative_author])
+                # E tag must immediately follow p tag per NKBIP-01
+                # Format: ["E", "<original_event_id>", "<relay_url>", "<pubkey>"]
+                if hasattr(metadata, "derivative_event") and metadata.derivative_event:
+                    relay_url = ""
+                    pubkey = ""
+                    if hasattr(metadata, "derivative_relay") and metadata.derivative_relay:
+                        relay_url = metadata.derivative_relay
+                    if hasattr(metadata, "derivative_pubkey") and metadata.derivative_pubkey:
+                        pubkey = metadata.derivative_pubkey
+                    elif hasattr(metadata, "derivative_author") and metadata.derivative_author:
+                        # Use derivative_author as fallback for pubkey
+                        pubkey = metadata.derivative_author
+                    tags.append(["E", metadata.derivative_event, relay_url, pubkey])
             
             # Add any additional tags specified by the user
             if hasattr(metadata, "additional_tags") and metadata.additional_tags:
@@ -125,6 +147,12 @@ def serialize_bookstr(
         
         # Add type tag (for all index events)
         tags.append(["type", pub_type])
+        
+        # Add auto-update tag (required per NKBIP-01)
+        auto_update_val = "ask"  # Default value
+        if metadata and hasattr(metadata, "auto_update") and metadata.auto_update:
+            auto_update_val = metadata.auto_update
+        tags.append(["auto-update", auto_update_val])
         
         # Add bookstr macro tags for book and chapter index events
         if use_bookstr and (is_book or is_chapter):
@@ -394,10 +422,14 @@ def serialize_bookstr(
                     break
             
             # Add a-tags for all children of this index event
+            # Format per NKBIP-01: ["a", "<kind:pubkey:dtag>", "<relay hint>", "<event id>"]
+            # Relay hint and event id are optional, but we support the format
             if d_tag and d_tag in parent_d_to_children:
                 for child_kind, child_d in parent_d_to_children[d_tag]:
-                    # Format: ["a", "<kind>:<pubkey>:<d-tag>"]
-                    a_tag = ["a", f"{child_kind}:{PLACEHOLDER_PUBKEY}:{child_d}"]
+                    # Format: ["a", "<kind>:<pubkey>:<d-tag>", "<relay hint>", "<event id>"]
+                    # Relay hint and event id are optional - we'll use empty strings as placeholders
+                    # The actual event IDs will be filled in after events are published
+                    a_tag = ["a", f"{child_kind}:{PLACEHOLDER_PUBKEY}:{child_d}", "", ""]
                     event.tags.append(a_tag)
 
     return events

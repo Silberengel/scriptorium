@@ -23,6 +23,13 @@ class Metadata:
     summary: Optional[str] = None  # Publication summary/description
     version: Optional[str] = None  # Publication version (e.g., "KJV", "DRM", "3rd edition")
     additional_tags: List[List[str]] = field(default_factory=list)  # Additional NKBIP-01 tags (e.g., [["i", "isbn:..."], ["t", "fables"]])
+    auto_update: Optional[str] = None  # Auto-update behavior: "yes", "ask", or "no" (default: "ask" if not specified)
+    source: Optional[str] = None  # Source URL for the publication
+    image: Optional[str] = None  # Image URL for the publication cover
+    derivative_author: Optional[str] = None  # Pubkey of original author (for derivative works)
+    derivative_event: Optional[str] = None  # Event ID of original event (for derivative works)
+    derivative_relay: Optional[str] = None  # Relay URL for original event (for derivative works)
+    derivative_pubkey: Optional[str] = None  # Pubkey for original event (for derivative works, typically same as derivative_author)
 
 
 def load_metadata(base_dir: Path) -> Optional[Metadata]:
@@ -52,6 +59,13 @@ def load_metadata(base_dir: Path) -> Optional[Metadata]:
         summary=_get("summary") or _get("description"),  # Support both "summary" (NKBIP-01) and "description" (legacy)
         version=_get("version"),  # Optional version
         additional_tags=_get("additional_tags", []),  # Additional tags as list of lists
+        auto_update=_get("auto_update", "ask"),  # Auto-update behavior (default: "ask")
+        source=_get("source"),  # Optional source URL
+        image=_get("image"),  # Optional image URL
+        derivative_author=_get("derivative_author"),  # Optional original author pubkey for derivative works
+        derivative_event=_get("derivative_event"),  # Optional original event ID for derivative works
+        derivative_relay=_get("derivative_relay"),  # Optional relay URL for original event
+        derivative_pubkey=_get("derivative_pubkey"),  # Optional pubkey for original event
     )
 
 
