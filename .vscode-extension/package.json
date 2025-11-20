@@ -74,6 +74,11 @@
         "command": "scriptorium.delete",
         "title": "Scriptorium: Delete Publication",
         "icon": "$(trash)"
+      },
+      {
+        "command": "scriptorium.openSettings",
+        "title": "Scriptorium: Open Settings",
+        "icon": "$(settings-gear)"
       }
     ],
     "configuration": {
@@ -82,24 +87,35 @@
         "scriptorium.relayUrl": {
           "type": "string",
           "default": "wss://thecitadel.nostr1.com",
-          "description": "Default Nostr relay URL"
+          "description": "Default Nostr relay URL for publishing events",
+          "markdownDescription": "The WebSocket URL of the Nostr relay to publish events to. Default: `wss://thecitadel.nostr1.com`"
         },
         "scriptorium.secretKey": {
           "type": "string",
           "default": "",
           "description": "Nostr secret key (nsec or hex). Leave empty to use SCRIPTORIUM_KEY env var.",
+          "markdownDescription": "Your Nostr secret key in nsec format (e.g., `nsec1...`) or hex format. If left empty, the extension will use the `SCRIPTORIUM_KEY` environment variable.",
           "scope": "application"
         },
         "scriptorium.outputDir": {
           "type": "string",
           "default": "uploader/publisher/out",
-          "description": "Output directory for generated events"
+          "description": "Output directory for generated events",
+          "markdownDescription": "Directory where generated events will be saved. Default: `uploader/publisher/out`"
         },
         "scriptorium.sourceType": {
           "type": "string",
           "enum": ["HTML", "ADOC", "MARKDOWN", "RTF", "EPUB"],
+          "enumDescriptions": [
+            "HTML source files",
+            "AsciiDoc source files",
+            "Markdown source files",
+            "RTF source files",
+            "EPUB source files"
+          ],
           "default": "HTML",
-          "description": "Default source type"
+          "description": "Default source type for input files",
+          "markdownDescription": "The default file type to expect when processing source files. Currently HTML and ADOC are fully supported."
         }
       }
     },

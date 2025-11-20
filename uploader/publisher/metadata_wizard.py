@@ -90,9 +90,51 @@ def draft_metadata_from_document(
 
 def write_metadata_yaml(path: str, draft: MetadataDraft) -> None:
     data = asdict(draft)
-    # Remove None values to keep YAML clean
-    data = {k: v for k, v in data.items() if v is not None}
+    
+    # Always include all NKBIP-01 standard fields, even if None
+    # This helps users see what fields are available and fill them in
+    nkbip01_fields = [
+        'published_on', 'published_by', 'summary', 'type', 'auto_update',
+        'source', 'image', 'version',
+        'derivative_author', 'derivative_event', 'derivative_relay', 'derivative_pubkey',
+        'additional_tags'
+    ]
+    
+    # Core fields that should always be present
+    core_fields = ['title', 'author', 'language', 'collection_id', 'has_collection', 
+                   'use_bookstr', 'book_title_mapping_file']
+    
+    # Build output with all standard fields in a logical order
+    output_data = {}
+    
+    # 1. Core required fields
+    for field in core_fields:
+        if field in data:
+            output_data[field] = data[field]
+    
+    # 2. NKBIP-01 standard fields (ALWAYS include, even if None)
+    for field in nkbip01_fields:
+        output_data[field] = data.get(field)  # This will be None if not set
+    
+    # 3. Other fields (only if they have values)
+    for k, v in data.items():
+        if k not in core_fields and k not in nkbip01_fields and v is not None:
+            # Include non-standard fields only if they have values
+            if isinstance(v, (list, dict)) and len(v) == 0:
+                # Include empty lists/dicts for important fields
+                if k in ['wikistr_mappings', 'book_metadata']:
+                    output_data[k] = v
+            else:
+                output_data[k] = v
+    
+    # Write YAML - use represent_none to show null explicitly
+    def represent_none(self, _):
+        return self.represent_scalar('tag:yaml.org,2002:null', 'null')
+    
+    yaml.add_representer(type(None), represent_none)
+    
     with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        yaml.safe_dump(output_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False, 
+                       explicit_start=False, explicit_end=False)
 
 

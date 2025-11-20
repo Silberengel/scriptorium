@@ -18,15 +18,32 @@ export function activate(context: vscode.ExtensionContext) {
         ScriptoriumPanel.createOrShow(context.extensionPath);
     });
 
+    // Open settings command
+    const openSettingsCommand = vscode.commands.registerCommand('scriptorium.openSettings', () => {
+        vscode.commands.executeCommand('workbench.action.openSettings', '@ext:silberengel.scriptorium-publisher');
+    });
+
     // Initialize metadata
     const initMetadataCommand = vscode.commands.registerCommand('scriptorium.initMetadata', async (uri?: vscode.Uri) => {
-        const filePath = uri?.fsPath || await getActiveFilePath();
+        let filePath = uri?.fsPath || await getActiveFilePath();
+        
+        // If no file selected, show file picker
         if (!filePath) {
-            vscode.window.showErrorMessage('Please open a file or select one in the explorer');
-            return;
+            const selected = await vscode.window.showOpenDialog({
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                filters: {
+                    'Source Files': ['html', 'adoc', 'md']
+                },
+                title: 'Select source file for metadata initialization'
+            });
+            if (!selected || selected.length === 0) {
+                return;
+            }
+            filePath = selected[0].fsPath;
         }
 
-        const config = vscode.workspace.getConfiguration('scriptorium');
         const hasCollection = await vscode.window.showQuickPick(
             ['Yes', 'No'],
             { placeHolder: 'Does this source have a collection (top-level index)?' }
@@ -34,25 +51,44 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (hasCollection === undefined) { return; }
 
-        const output = await runCommand('init-metadata', {
-            input: filePath,
-            hasCollection: hasCollection === 'Yes'
-        });
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Initializing metadata...",
+            cancellable: false
+        }, async (progress) => {
+            const output = await runCommand('init-metadata', {
+                input: filePath,
+                hasCollection: hasCollection === 'Yes'
+            });
 
-        if (output.success) {
-            vscode.window.showInformationMessage('Metadata initialized successfully!');
-            provider.refresh();
-        } else {
-            vscode.window.showErrorMessage(`Failed to initialize metadata: ${output.error}`);
-        }
+            if (output.success) {
+                vscode.window.showInformationMessage('Metadata initialized successfully!');
+                provider.refresh();
+            } else {
+                vscode.window.showErrorMessage(`Failed to initialize metadata: ${output.error}`);
+            }
+        });
     });
 
     // Generate events
     const generateCommand = vscode.commands.registerCommand('scriptorium.generate', async (uri?: vscode.Uri) => {
-        const filePath = uri?.fsPath || await getActiveFilePath();
+        let filePath = uri?.fsPath || await getActiveFilePath();
+        
+        // If no file selected, show file picker
         if (!filePath) {
-            vscode.window.showErrorMessage('Please open a file or select one in the explorer');
-            return;
+            const selected = await vscode.window.showOpenDialog({
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                filters: {
+                    'Source Files': ['html', 'adoc', 'md']
+                },
+                title: 'Select source file to generate events'
+            });
+            if (!selected || selected.length === 0) {
+                return;
+            }
+            filePath = selected[0].fsPath;
         }
 
         const config = vscode.workspace.getConfiguration('scriptorium');
@@ -72,39 +108,83 @@ export function activate(context: vscode.ExtensionContext) {
             options.promoteDefaultStructure = true;
         }
 
-        const output = await runCommand('generate', options);
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Generating events...",
+            cancellable: false
+        }, async (progress) => {
+            progress.report({ increment: 0, message: "Parsing source file..." });
+            
+            const output = await runCommand('generate', options);
 
-        if (output.success) {
-            vscode.window.showInformationMessage(`Generated ${output.eventCount || 0} events successfully!`);
-            provider.refresh();
-        } else {
-            vscode.window.showErrorMessage(`Failed to generate events: ${output.error}`);
-        }
+            if (output.success) {
+                vscode.window.showInformationMessage(`Generated ${output.eventCount || 0} events successfully!`);
+                provider.refresh();
+            } else {
+                vscode.window.showErrorMessage(`Failed to generate events: ${output.error}`);
+                // Show output channel with details
+                const outputChannel = vscode.window.createOutputChannel('Scriptorium');
+                outputChannel.appendLine('Generate command failed:');
+                outputChannel.appendLine(output.error || 'Unknown error');
+                if (output.output) {
+                    outputChannel.appendLine('\nOutput:');
+                    outputChannel.appendLine(output.output);
+                }
+                outputChannel.show();
+            }
+        });
     });
 
     // Publish events
     const publishCommand = vscode.commands.registerCommand('scriptorium.publish', async () => {
         const config = vscode.workspace.getConfiguration('scriptorium');
         const relayUrl = config.get<string>('relayUrl', 'wss://thecitadel.nostr1.com');
-        const secretKey = config.get<string>('secretKey', '');
+        let secretKey = config.get<string>('secretKey', '');
 
         if (!secretKey && !process.env.SCRIPTORIUM_KEY) {
             const input = await vscode.window.showInputBox({
                 prompt: 'Enter your Nostr secret key (nsec or hex)',
                 password: true,
-                placeHolder: 'nsec1... or hex key'
+                placeHolder: 'nsec1... or hex key',
+                ignoreFocusOut: true
             });
             if (!input) { return; }
             await config.update('secretKey', input, vscode.ConfigurationTarget.Global);
+            secretKey = input;
         }
 
-        const output = await runCommand('publish', {});
+        const confirm = await vscode.window.showWarningMessage(
+            `Publish events to ${relayUrl}?`,
+            { modal: true },
+            'Publish',
+            'Cancel'
+        );
+        if (confirm !== 'Publish') { return; }
 
-        if (output.success) {
-            vscode.window.showInformationMessage(`Published to ${relayUrl} successfully!`);
-        } else {
-            vscode.window.showErrorMessage(`Failed to publish: ${output.error}`);
-        }
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Publishing events...",
+            cancellable: false
+        }, async (progress) => {
+            progress.report({ increment: 0, message: "Connecting to relay..." });
+            
+            const output = await runCommand('publish', {});
+
+            if (output.success) {
+                vscode.window.showInformationMessage(`Published to ${relayUrl} successfully!`);
+            } else {
+                vscode.window.showErrorMessage(`Failed to publish: ${output.error}`);
+                // Show output channel with details
+                const outputChannel = vscode.window.createOutputChannel('Scriptorium');
+                outputChannel.appendLine('Publish command failed:');
+                outputChannel.appendLine(output.error || 'Unknown error');
+                if (output.output) {
+                    outputChannel.appendLine('\nOutput:');
+                    outputChannel.appendLine(output.output);
+                }
+                outputChannel.show();
+            }
+        });
     });
 
     // Quality control
@@ -188,6 +268,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
         openPanelCommand,
+        openSettingsCommand,
         initMetadataCommand,
         generateCommand,
         publishCommand,
@@ -206,7 +287,23 @@ async function getActiveFilePath(): Promise<string | undefined> {
     return undefined;
 }
 
-async function runCommand(cmd: string, options: any): Promise<{ success: boolean; error?: string; eventCount?: number }> {
+async function findPythonCommand(): Promise<string> {
+    // Try python3 first (common on Linux/Mac), then python
+    try {
+        await execAsync('python3 --version');
+        return 'python3';
+    } catch {
+        try {
+            await execAsync('python --version');
+            return 'python';
+        } catch {
+            // Fallback - let the error happen with a clear message
+            return 'python3';
+        }
+    }
+}
+
+async function runCommand(cmd: string, options: any): Promise<{ success: boolean; error?: string; eventCount?: number; output?: string }> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
         return { success: false, error: 'No workspace folder open' };
@@ -239,7 +336,8 @@ async function runCommand(cmd: string, options: any): Promise<{ success: boolean
         args.push('--republish');
     }
 
-    const command = `python -m uploader.publisher.cli ${args.join(' ')}`;
+    const pythonCmd = await findPythonCommand();
+    const command = `${pythonCmd} -m uploader.publisher.cli ${args.join(' ')}`;
     
     try {
         const { stdout, stderr } = await execAsync(command, {
@@ -251,9 +349,10 @@ async function runCommand(cmd: string, options: any): Promise<{ success: boolean
         const eventCountMatch = stdout.match(/Total events: (\d+)/);
         const eventCount = eventCountMatch ? parseInt(eventCountMatch[1]) : undefined;
 
-        return { success: true, eventCount };
+        return { success: true, eventCount, output: stdout };
     } catch (error: any) {
-        return { success: false, error: error.message || String(error) };
+        const errorMsg = error.stderr || error.message || String(error);
+        return { success: false, error: errorMsg, output: error.stdout };
     }
 }
 
@@ -266,23 +365,54 @@ async function runScript(script: string, args: string[]): Promise<void> {
 
     const config = vscode.workspace.getConfiguration('scriptorium');
     const secretKey = config.get<string>('secretKey', '');
+    const relayUrl = config.get<string>('relayUrl', 'wss://thecitadel.nostr1.com');
 
     const env = { ...process.env };
     if (secretKey) {
         env.SCRIPTORIUM_KEY = secretKey;
     }
+    env.SCRIPTORIUM_RELAY = relayUrl;
 
-    const command = `python -m uploader.publisher.scripts.${script} ${args.join(' ')}`;
+    const pythonCmd = await findPythonCommand();
+    const command = `${pythonCmd} -m uploader.publisher.scripts.${script} ${args.join(' ')}`;
     
-    try {
-        const { stdout } = await execAsync(command, {
-            cwd: workspaceFolder.uri.fsPath,
-            env
-        });
-        vscode.window.showInformationMessage('Script completed successfully');
-    } catch (error: any) {
-        vscode.window.showErrorMessage(`Script failed: ${error.message}`);
-    }
+    vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Running ${script}...`,
+        cancellable: false
+    }, async (progress) => {
+        try {
+            const { stdout, stderr } = await execAsync(command, {
+                cwd: workspaceFolder.uri.fsPath,
+                env
+            });
+            vscode.window.showInformationMessage('Script completed successfully');
+            
+            // Show output in output channel
+            const outputChannel = vscode.window.createOutputChannel('Scriptorium');
+            outputChannel.appendLine(`=== ${script} output ===`);
+            outputChannel.appendLine(stdout);
+            if (stderr) {
+                outputChannel.appendLine(`\nErrors:`);
+                outputChannel.appendLine(stderr);
+            }
+            outputChannel.show();
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Script failed: ${error.message}`);
+            const outputChannel = vscode.window.createOutputChannel('Scriptorium');
+            outputChannel.appendLine(`=== ${script} error ===`);
+            outputChannel.appendLine(error.message);
+            if (error.stdout) {
+                outputChannel.appendLine('\nOutput:');
+                outputChannel.appendLine(error.stdout);
+            }
+            if (error.stderr) {
+                outputChannel.appendLine('\nErrors:');
+                outputChannel.appendLine(error.stderr);
+            }
+            outputChannel.show();
+        }
+    });
 }
 
 export function deactivate() {}
