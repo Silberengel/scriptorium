@@ -153,6 +153,21 @@ Step-by-step workflow
    - `python -m uploader.publisher.cli all --input uploader/input_data/{collection_slug}/publication.html --source-type HTML`
    - Runs generate → publish → qc in sequence.
 
+9) Broadcast publication to another relay
+   - `python -m uploader.publisher.scripts.broadcast_publication <nevent> <relay_url> [--key SCRIPTORIUM_KEY]`
+   - Takes the nevent of the top-level 30040 event
+   - Recursively fetches all child events via a-tags
+   - Publishes all events to the specified relay (ws:// or wss://)
+   - Example: `python -m uploader.publisher.scripts.broadcast_publication nevent1qqs... wss://relay.example.com`
+
+10) Delete publication from a relay
+   - `python -m uploader.publisher.scripts.delete_publication <nevent> <relay_url> [--key SCRIPTORIUM_KEY]`
+   - Takes the nevent of the top-level 30040 event
+   - Recursively fetches all child events via a-tags
+   - Creates deletion events (kind 5) for all events
+   - Requires confirmation by typing "DELETE"
+   - Example: `python -m uploader.publisher.scripts.delete_publication nevent1qqs... wss://relay.example.com`
+
 Commands
 --------
 - init-metadata: infer and create @metadata.yml next to your source
@@ -160,6 +175,11 @@ Commands
 - publish: publish events to relay with verification (adds `a` tags to index events)
 - qc: verify presence on relay and republish missing events (use `--republish` to auto-republish)
 - all: run generate → publish → qc in sequence
+
+Scripts
+-------
+- broadcast_publication: broadcast an entire publication to a relay (takes nevent)
+- delete_publication: delete an entire publication from a relay (takes nevent)
 
 Environment
 -----------

@@ -80,6 +80,15 @@ def parse_adoc_structure(
         if content:
             contentful_levels.append(path[-1][0])
     section_level = max(contentful_levels) if contentful_levels else 4
+    
+    # Debug: count sections by level
+    level_counts: Dict[int, int] = {}
+    for path, buf in nodes:
+        if buf:
+            content = "\n".join(buf).strip()
+            if content:
+                level = path[-1][0]
+                level_counts[level] = level_counts.get(level, 0) + 1
 
     # Build SectionEntry list for verse nodes at section_level with non-empty content
     # Also capture content at all other levels that aren't at section_level - these become "-section" events
@@ -104,6 +113,14 @@ def parse_adoc_structure(
             path_titles = [t for _, t in path]
             path_levels = [lv for lv, _ in path]
             sections.append(SectionEntry(path_titles=path_titles, path_levels=path_levels, content=content))
+
+    # Debug output
+    if level_counts:
+        print(f"  Content by level: {dict(sorted(level_counts.items()))}")
+        print(f"  Verse level (section_level): {section_level}")
+        verse_count = level_counts.get(section_level, 0)
+        section_count = sum(count for level, count in level_counts.items() if level != section_level)
+        print(f"  Verses (level {section_level}): {verse_count}, Sections (other levels): {section_count}")
 
     return CollectionTree(sections=sections, section_level=section_level)
 

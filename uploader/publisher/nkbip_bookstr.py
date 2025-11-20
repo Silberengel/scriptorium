@@ -57,27 +57,238 @@ def _d_for(*parts: str) -> str:
     """
     Build a strict d-tag using only ASCII letters, digits, and hyphens.
     Join hierarchy with single hyphens (no slashes) and trim to <=75 chars.
+    
+    Improvements:
+    - Removes common stop words that cause repetition
+    - Deduplicates repeated segments
+    - Uses abbreviations for common collection/part names
+    - Compresses verbose titles to essential parts only
     """
     norm = [slugify_strict(p) for p in parts if p]
     # Drop generic 'adoc' segment if present
     norm = [p for p in norm if p and p != "adoc"]
     # Remove empties
     norm = [p for p in norm if p]
+    
+    if not norm:
+        return ""
+    
+    # Special handling: if a segment is just a number (verse/section), preserve it as-is
+    # This ensures verse numbers like "3:16" -> "3-16" are preserved
+    for i, seg in enumerate(norm):
+        # Check if segment is a verse pattern like "3-16" or just a number
+        if re.match(r'^\d+(-\d+)*$', seg):
+            # This is a verse/section number - keep it as-is, don't process further
+            continue
+    
+    # Abbreviation map for common collection/part names
+    # Used for both full segment matches and individual word matches
+    segment_abbrev_map = {
+        "old-testament": "ot",
+        "new-testament": "nt",
+        "according": "acc",
+        "verse": "v",
+        "chapter": "ch",
+        "section": "s",
+        "introduction": "intro",
+        "book": "bk",
+        "book-of": "bk",
+        "book-of-the": "bk",
+        "act": "a"
+    }
+    
+    # Common stop words to remove from middle segments (keep in first/last)
+    stop_words = {"the", "of", "to", "and", "a", "an", "in", "on", "at", "for", "with", "by", "st", "saint"}
+    
+    # Process segments to remove stop words, deduplicate, and abbreviate
+    processed = []
+    seen_words = set()
+    
+    for i, segment in enumerate(norm):
+        # Check if this is a verse/section number pattern (e.g., "3-16", "3", "16")
+        # If it matches the pattern for a section (has multiple numbers like "1-31"), add "s-" prefix
+        if re.match(r'^\d+(-\d+)+$', segment):
+            # This is a section number (multiple numbers separated by hyphens) - add "s-" prefix
+            # e.g., "1-31" -> "s-1-31"
+            processed.append(f"s-{segment}")
+            continue
+        elif re.match(r'^\d+$', segment):
+            # Single number - could be verse or chapter number, preserve as-is
+            processed.append(segment)
+            continue
+        
+        # First, check if the entire segment matches an abbreviation
+        if segment in segment_abbrev_map:
+            abbrev_segment = segment_abbrev_map[segment]
+            processed.append(abbrev_segment)
+            seen_words.add(abbrev_segment)
+            continue
+        
+        # Check if segment contains "old-testament" or "new-testament" and replace
+        # This handles cases where "old-testament" appears as part of a longer segment
+        if "old-testament" in segment:
+            segment = segment.replace("old-testament", "ot")
+        elif "new-testament" in segment:
+            segment = segment.replace("new-testament", "nt")
+        
+        # Split segment into words
+        words = segment.split("-")
+        filtered_words = []
+        
+        # Process individual words
+        for word in words:
+            # Apply abbreviations from segment_abbrev_map
+            if word in segment_abbrev_map:
+                word = segment_abbrev_map[word]
+            # Special handling: "old" -> "ot" (but only if not already part of "old-testament" which was replaced above)
+            elif word == "old":
+                word = "ot"
+            # Special handling: "new" -> "nt" (but only if not already part of "new-testament" which was replaced above)
+            elif word == "new":
+                word = "nt"
+            
+            # For middle segments, skip stop words (but keep them in first and last segments)
+            if (i > 0 and i < len(norm) - 1) and word in stop_words:
+                continue
+            
+            # Skip if we've seen this exact word recently (deduplicate)
+            # BUT: don't skip numbers (verse/section numbers) or chapter numbers
+            is_number = word.isdigit()
+            if word in seen_words and len(processed) > 0 and not is_number:
+                # Only skip if it's a very common word or short
+                if word in stop_words or len(word) <= 2:
+                    continue
+            
+            filtered_words.append(word)
+            if not is_number:  # Don't track numbers in seen_words (they can repeat)
+                seen_words.add(word)
+        
+        # Special handling: if we have "ot" and "t" together (from "old" + "testament"), combine to "ot"
+        # This handles cases where "old-testament" was split before replacement
+        if len(filtered_words) >= 2:
+            for j in range(len(filtered_words) - 1):
+                if filtered_words[j] == "ot" and filtered_words[j + 1] == "t":
+                    # Combine "ot" + "t" -> "ot" (old + testament)
+                    filtered_words.pop(j + 1)
+                    break
+                elif filtered_words[j] == "nt" and filtered_words[j + 1] == "t":
+                    # Combine "nt" + "t" -> "nt" (new + testament)
+                    filtered_words.pop(j + 1)
+                    break
+        
+        if filtered_words:
+            processed_segment = "-".join(filtered_words)
+            # Collapse any double hyphens that might have been created
+            processed_segment = re.sub(r"-+", "-", processed_segment)
+            processed_segment = processed_segment.strip("-")
+            # Only add non-empty segments
+            if processed_segment:
+                processed.append(processed_segment)
+    
+    # If processing removed everything, fall back to original
+    if not processed:
+        processed = norm
+    
+    # Additional compression: remove duplicate book names and words
+    # Handle cases like:
+    # - "aggeus-aggeus-2-5" -> "aggeus-2-5" (duplicate segment)
+    # - "genesis-genesis-1-2" -> "genesis-1-2" (duplicate segment)
+    # - "book-genesis" followed by "genesis-1-2" -> "book-genesis-1-2" (word at boundary)
+    # BUT: be careful not to remove numbers (verse/section numbers)
+    
+    # Pass 1: Remove exact duplicate consecutive segments
+    i = 0
+    while i < len(processed) - 1:
+        if processed[i] == processed[i + 1]:
+            processed.pop(i)
+            continue
+        i += 1
+    
+    # Pass 2: Remove segments that are prefixes of the next segment
+    # e.g., "genesis" followed by "genesis-chapter-3" -> remove "genesis"
+    i = 0
+    while i < len(processed) - 1:
+        current = processed[i]
+        next_seg = processed[i + 1]
+        
+        # If current is a single word and next starts with it, remove current
+        if len(current.split("-")) == 1 and next_seg.startswith(current + "-"):
+            processed.pop(i)
+            continue
+        
+        # If next is a single word and current ends with it, remove next
+        if len(next_seg.split("-")) == 1 and current.endswith("-" + next_seg):
+            processed.pop(i + 1)
+            continue
+        
+        i += 1
+    
+    # Pass 3: Remove duplicate words at segment boundaries
+    # e.g., "book-genesis" followed by "genesis-1-2" -> "book-genesis-1-2"
+    i = 0
+    while i < len(processed) - 1:
+        current_words = processed[i].split("-")
+        next_words = processed[i + 1].split("-")
+        
+        if current_words and next_words:
+            last_word = current_words[-1]
+            first_word = next_words[0]
+            
+            # Don't deduplicate numbers
+            if (not last_word.isdigit() and not first_word.isdigit() and 
+                last_word == first_word and len(last_word) > 2):
+                
+                # Remove duplicate from next segment (remove first word)
+                if len(next_words) > 1:
+                    next_words = next_words[1:]
+                    processed[i + 1] = "-".join(next_words)
+                else:
+                    # Next segment becomes empty, remove it
+                    processed.pop(i + 1)
+                    continue
+        
+        i += 1
+    
+    # Pass 4: Final cleanup - remove any remaining exact duplicates
+    i = 0
+    while i < len(processed) - 1:
+        if processed[i] == processed[i + 1]:
+            processed.pop(i)
+            continue
+        i += 1
+    
     # Bible-like tail compression:
     # If the penultimate segment looks like "<book>-chapter-<num>"
     # and the last looks like "<n>-<m>" (verse indices),
     # drop the "-chapter-<num>" suffix so we keep "<book>-<n>-<m>"
-    if len(norm) >= 2:
+    if len(processed) >= 2:
         import re as _re
-        penult = norm[-2]
-        last = norm[-1]
+        penult = processed[-2]
+        last = processed[-1]
         m_pen = _re.match(r"^(?P<book>.+)-chapter-\d+$", penult)
         m_last = _re.match(r"^\d+(?:-\d+.*)?$", last)
         if m_pen and m_last:
             # Replace penultimate with just the book base
-            norm[-2] = m_pen.group("book")
+            processed[-2] = m_pen.group("book")
+    
+    # Final cleanup: collapse any remaining double hyphens and remove empty segments
+    final_parts = []
+    for part in processed:
+        # Collapse double hyphens within each part
+        cleaned = re.sub(r"-+", "-", part).strip("-")
+        # Only add non-empty parts
+        if cleaned:
+            final_parts.append(cleaned)
+    
+    if not final_parts:
+        final_parts = processed
+    
     # Join and enforce length
-    return compress_slug_parts(norm, max_len=75)
+    result = compress_slug_parts(final_parts, max_len=75)
+    # Final safety check: collapse any double hyphens in the final result
+    # This handles cases where compress_slug_parts might create double hyphens
+    result = re.sub(r"-+", "-", result).strip("-")
+    return result
 
 
 def serialize_bookstr(
@@ -326,6 +537,12 @@ def serialize_bookstr(
                 section_num = parent_section_count[collection_id]
                 verse_d = f"{collection_id}-section-{section_num}"
             
+            # Check for duplicate d-tag (should not happen, but verify)
+            if verse_d in emitted_verse_d_tags:
+                # This is a duplicate - skip it
+                continue
+            
+            emitted_verse_d_tags.add(verse_d)
             verse_title = titles[-1] if titles else "Section"
             s_tags = [["d", verse_d], ["title", verse_title], ["L", language], ["m", "text/asciidoc"]]
             

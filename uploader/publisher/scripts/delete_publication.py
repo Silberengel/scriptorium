@@ -3,10 +3,15 @@
 Delete an entire publication from a relay.
 
 Usage:
-    python -m uploader.publisher.scripts.delete_publication <nevent> <relay_url> [--key SCRIPTORIUM_KEY]
+    python -m uploader.publisher.scripts.delete_publication <event_ref> <relay_url> [--key SCRIPTORIUM_KEY]
+
+    event_ref can be:
+    - nevent (bech32 encoded event reference)
+    - naddr (bech32 encoded address: kind:pubkey:d-tag)
+    - hex event ID (64 hex characters)
 
 The script will:
-1. Resolve the nevent to get the top-level 30040 event
+1. Resolve the event reference to get the top-level 30040 event
 2. Recursively fetch all child events via a-tags
 3. Create deletion events (kind 5) for all events
 4. Publish deletion events to the specified relay
@@ -19,8 +24,14 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Set, Any, Optional
+from typing import Dict, List, Set, Any, Optional, Callable
 import websockets
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -85,6 +96,84 @@ def decode_nevent(nevent: str) -> Dict[str, Any]:
     return result
 
 
+def decode_naddr(naddr: str) -> Dict[str, Any]:
+    """
+    Decode an naddr (bech32 encoded address: kind:pubkey:d-tag).
+    Returns dict with: kind, pubkey, d_tag, relay_hint
+    """
+    if not naddr.startswith("naddr1"):
+        raise ValueError(f"Invalid naddr format: {naddr}")
+    
+    # Decode bech32
+    hrp, data = bech32_decode(naddr)
+    if hrp != "naddr":
+        raise ValueError(f"Invalid naddr HRP: {hrp}")
+    
+    # Convert from 5-bit to 8-bit
+    decoded = convertbits(data, 5, 8, False)
+    if decoded is None:
+        raise ValueError("Failed to decode bech32 data")
+    
+    # Parse TLV format
+    result = {}
+    i = 0
+    while i < len(decoded):
+        if i + 1 >= len(decoded):
+            break
+        t = decoded[i]
+        l = decoded[i + 1]
+        if i + 2 + l > len(decoded):
+            break
+        v = decoded[i + 2:i + 2 + l]
+        
+        if t == 0:  # kind (varint, but we'll read as bytes and convert)
+            # Kind is stored as a varint, but for simplicity, read as little-endian uint32
+            kind_bytes = bytes(v)
+            if len(kind_bytes) <= 4:
+                kind = int.from_bytes(kind_bytes, byteorder='little')
+                result["kind"] = kind
+        elif t == 1:  # pubkey (32 bytes)
+            result["pubkey"] = bytes(v).hex()
+        elif t == 2:  # d-tag (string)
+            result["d_tag"] = bytes(v).decode('utf-8')
+        elif t == 3:  # relay hint (string)
+            result["relay_hint"] = bytes(v).decode('utf-8')
+        
+        i += 2 + l
+    
+    if "kind" not in result or "pubkey" not in result or "d_tag" not in result:
+        raise ValueError("naddr missing required fields (kind, pubkey, d_tag)")
+    
+    return result
+
+
+def parse_event_reference(ref: str) -> Dict[str, Any]:
+    """
+    Parse an event reference in any format: nevent, naddr, or hex event ID.
+    Returns dict with: event_id, relay_hint, author_hint (for nevent/hex)
+                      or kind, pubkey, d_tag, relay_hint (for naddr)
+    """
+    ref = ref.strip()
+    
+    # Check if it's a hex event ID (64 hex characters)
+    if len(ref) == 64 and all(c in '0123456789abcdefABCDEF' for c in ref):
+        return {
+            "event_id": ref.lower(),
+            "relay_hint": None,
+            "author_hint": None,
+        }
+    
+    # Check if it's a nevent
+    if ref.startswith("nevent1"):
+        return decode_nevent(ref)
+    
+    # Check if it's an naddr
+    if ref.startswith("naddr1"):
+        return decode_naddr(ref)
+    
+    raise ValueError(f"Invalid event reference format. Expected nevent, naddr, or 64-char hex ID, got: {ref[:20]}...")
+
+
 async def fetch_event_by_id(relay_url: str, event_id: str, author_hint: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Fetch an event by its ID from a relay."""
     filters = [{"ids": [event_id]}]
@@ -94,6 +183,21 @@ async def fetch_event_by_id(relay_url: str, event_id: str, author_hint: Optional
     events = await query_events_from_relay(relay_url, author_hint or "", filters, timeout=30.0)
     if events:
         return events[0]
+    return None
+
+
+async def fetch_event_by_naddr(relay_url: str, kind: int, pubkey: str, d_tag: str) -> Optional[Dict[str, Any]]:
+    """Fetch an event by naddr (kind:pubkey:d-tag) from a relay."""
+    filters = [{
+        "kinds": [kind],
+        "authors": [pubkey],
+        "#d": [d_tag],
+    }]
+    
+    events = await query_events_from_relay(relay_url, pubkey, filters, timeout=30.0)
+    if events:
+        # Return the latest event (highest created_at)
+        return max(events, key=lambda e: e.get("created_at", 0))
     return None
 
 
@@ -118,6 +222,7 @@ async def fetch_all_events_recursive(
     root_event: Dict[str, Any],
     collected: Set[str],
     errors: List[str],
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Recursively fetch all events in a publication tree.
@@ -140,6 +245,9 @@ async def fetch_all_events_recursive(
     
     collected.add(event_id)
     all_events.append(root_event)
+    
+    if progress_callback:
+        progress_callback(f"Fetched event {len(collected)}: {event_id[:16]}...")
     
     # Extract a-tags from root event
     a_tags = []
@@ -184,6 +292,7 @@ async def fetch_all_events_recursive(
                     child_event,
                     collected,
                     errors,
+                    progress_callback,
                 )
                 all_events.extend(child_tree)
             else:
@@ -204,6 +313,7 @@ async def fetch_all_events_recursive(
                     child_event,
                     collected,
                     errors,
+                    progress_callback,
                 )
                 all_events.extend(child_tree)
             else:
@@ -228,7 +338,13 @@ async def create_and_publish_deletions(
     current_time = int(time.time())
     deletion_events = []
     
-    for event_to_delete in events_to_delete:
+    print(f"Creating {len(events_to_delete)} deletion events...")
+    if HAS_TQDM:
+        pbar = tqdm(total=len(events_to_delete), desc="Creating deletions", unit="events")
+    else:
+        pbar = None
+    
+    for idx, event_to_delete in enumerate(events_to_delete):
         event_id_to_delete = event_to_delete.get("id")
         if not event_id_to_delete:
             continue
@@ -248,6 +364,14 @@ async def create_and_publish_deletions(
         deletion_event["sig"] = _sign_event(deletion_event, priv_hex)
         
         deletion_events.append(deletion_event)
+        
+        if pbar:
+            pbar.update(1)
+        elif (idx + 1) % 100 == 0:
+            print(f"Created {idx + 1}/{len(events_to_delete)} deletion events...")
+    
+    if pbar:
+        pbar.close()
     
     # Publish deletion events
     published_count = 0
@@ -256,6 +380,13 @@ async def create_and_publish_deletions(
     try:
         async with websockets.connect(relay_url) as ws:
             print(f"Connected to {relay_url}")
+            print(f"Publishing {len(deletion_events)} deletion events...")
+            
+            # Create progress bar if tqdm is available
+            if HAS_TQDM:
+                pbar = tqdm(total=len(deletion_events), desc="Publishing deletions", unit="events")
+            else:
+                pbar = None
             
             # Publish all deletion events
             for idx, deletion_event in enumerate(deletion_events):
@@ -263,7 +394,9 @@ async def create_and_publish_deletions(
                     await ws.send(json.dumps(["EVENT", deletion_event]))
                     published_count += 1
                     
-                    if (idx + 1) % 100 == 0:
+                    if pbar:
+                        pbar.update(1)
+                    elif (idx + 1) % 100 == 0:
                         print(f"Published {idx + 1}/{len(deletion_events)} deletion events...")
                     
                     # Small delay to avoid overwhelming relay
@@ -272,6 +405,11 @@ async def create_and_publish_deletions(
                         
                 except Exception as e:
                     errors.append(f"Error publishing deletion event {idx}: {e}")
+                    if pbar:
+                        pbar.set_postfix_str(f"Errors: {len(errors)}")
+            
+            if pbar:
+                pbar.close()
             
             # Wait a bit for responses
             await asyncio.sleep(2)
@@ -296,11 +434,18 @@ Examples:
     nevent1qqs... wss://relay.example.com
   
   python -m uploader.publisher.scripts.delete_publication \\
-    nevent1qqs... ws://localhost:8080 \\
+    naddr1qqs... ws://localhost:8080 \\
+    --key nsec1...
+  
+  python -m uploader.publisher.scripts.delete_publication \\
+    abc123...def456 wss://relay.example.com \\
     --key nsec1...
         """
     )
-    parser.add_argument("nevent", help="nevent of the top-level 30040 event")
+    parser.add_argument(
+        "event_ref",
+        help="Event reference: nevent, naddr, or 64-char hex event ID of the top-level 30040 event",
+    )
     parser.add_argument("relay_url", help="Relay URL (ws:// or wss://)")
     parser.add_argument(
         "--key",
@@ -316,32 +461,97 @@ Examples:
         print("ERROR: Secret key required. Set SCRIPTORIUM_KEY env var or use --key")
         sys.exit(1)
     
-    # Decode nevent
-    print(f"Decoding nevent: {args.nevent[:20]}...")
+    # Parse event reference (nevent, naddr, or hex)
+    print(f"Parsing event reference: {args.event_ref[:20]}...")
     try:
-        nevent_data = decode_nevent(args.nevent)
-        event_id = nevent_data["event_id"]
-        relay_hint = nevent_data.get("relay_hint")
-        author_hint = nevent_data.get("author_hint")
+        ref_data = parse_event_reference(args.event_ref)
     except Exception as e:
-        print(f"ERROR: Failed to decode nevent: {e}")
+        print(f"ERROR: Failed to parse event reference: {e}")
         sys.exit(1)
     
-    print(f"Event ID: {event_id}")
-    if relay_hint:
-        print(f"Relay hint: {relay_hint}")
-    if author_hint:
-        print(f"Author hint: {author_hint[:16]}...")
-    
-    # Use relay hint if available, otherwise use provided relay
-    query_relay = relay_hint or args.relay_url
-    
-    # Fetch root event
-    print(f"\nFetching root event from {query_relay}...")
-    root_event = await fetch_event_by_id(query_relay, event_id, author_hint)
+    # Determine if it's an naddr or event ID
+    if "kind" in ref_data and "pubkey" in ref_data and "d_tag" in ref_data:
+        # It's an naddr
+        kind = ref_data["kind"]
+        pubkey = ref_data["pubkey"]
+        d_tag = ref_data["d_tag"]
+        relay_hint = ref_data.get("relay_hint")
+        
+        print(f"naddr: kind={kind}, pubkey={pubkey[:16]}..., d={d_tag}")
+        if relay_hint:
+            print(f"Relay hint: {relay_hint}")
+        
+        # Use relay hint if available, otherwise try thecitadel first, then provided relay
+        if relay_hint:
+            query_relay = relay_hint
+        else:
+            # No relay hint - try thecitadel first
+            query_relay = "wss://thecitadel.nostr1.com"
+        
+        # Fetch root event by naddr
+        print(f"\nFetching root event from {query_relay}...")
+        root_event = await fetch_event_by_naddr(query_relay, kind, pubkey, d_tag)
+        
+        # If not found and we haven't tried the fallback relay, try it
+        if not root_event:
+            if relay_hint:
+                # If we had a relay hint, try thecitadel as fallback
+                if query_relay != "wss://thecitadel.nostr1.com":
+                    print(f"Event not found on {query_relay}, trying fallback relay wss://thecitadel.nostr1.com...")
+                    root_event = await fetch_event_by_naddr("wss://thecitadel.nostr1.com", kind, pubkey, d_tag)
+                    if root_event:
+                        query_relay = "wss://thecitadel.nostr1.com"
+            else:
+                # If no relay hint, we tried thecitadel first, now try the provided relay
+                if args.relay_url != query_relay:
+                    print(f"Event not found on {query_relay}, trying {args.relay_url}...")
+                    root_event = await fetch_event_by_naddr(args.relay_url, kind, pubkey, d_tag)
+                    if root_event:
+                        query_relay = args.relay_url
+        
+        author_hint = pubkey
+    else:
+        # It's an nevent or hex event ID
+        event_id = ref_data["event_id"]
+        relay_hint = ref_data.get("relay_hint")
+        author_hint = ref_data.get("author_hint")
+        
+        print(f"Event ID: {event_id}")
+        if relay_hint:
+            print(f"Relay hint: {relay_hint}")
+        if author_hint:
+            print(f"Author hint: {author_hint[:16]}...")
+        
+        # Use relay hint if available, otherwise try thecitadel first, then provided relay
+        if relay_hint:
+            query_relay = relay_hint
+        else:
+            # No relay hint - try thecitadel first
+            query_relay = "wss://thecitadel.nostr1.com"
+        
+        # Fetch root event by ID
+        print(f"\nFetching root event from {query_relay}...")
+        root_event = await fetch_event_by_id(query_relay, event_id, author_hint)
+        
+        # If not found and we haven't tried the fallback relay, try it
+        if not root_event:
+            if relay_hint:
+                # If we had a relay hint, try thecitadel as fallback
+                if query_relay != "wss://thecitadel.nostr1.com":
+                    print(f"Event not found on {query_relay}, trying fallback relay wss://thecitadel.nostr1.com...")
+                    root_event = await fetch_event_by_id("wss://thecitadel.nostr1.com", event_id, author_hint)
+                    if root_event:
+                        query_relay = "wss://thecitadel.nostr1.com"
+            else:
+                # If no relay hint, we tried thecitadel first, now try the provided relay
+                if args.relay_url != query_relay:
+                    print(f"Event not found on {query_relay}, trying {args.relay_url}...")
+                    root_event = await fetch_event_by_id(args.relay_url, event_id, author_hint)
+                    if root_event:
+                        query_relay = args.relay_url
     
     if not root_event:
-        print(f"ERROR: Root event not found on relay {query_relay}")
+        print(f"ERROR: Root event not found on any relay")
         sys.exit(1)
     
     print(f"✓ Found root event: kind={root_event.get('kind')}, d={root_event.get('tags', [])}")
@@ -350,11 +560,18 @@ Examples:
     print(f"\nFetching all child events recursively...")
     collected = set()
     errors = []
+    
+    # Progress callback for fetching
+    def progress_callback(msg: str):
+        if not HAS_TQDM:
+            print(f"  {msg}")
+    
     all_events = await fetch_all_events_recursive(
         query_relay,
         root_event,
         collected,
         errors,
+        progress_callback,
     )
     
     print(f"✓ Collected {len(all_events)} events to delete")

@@ -130,11 +130,42 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     )
     # Write events to NDJSON
     events_path = layout.events_dir / "events.ndjson"
+    
+    # Count event types for reporting
+    index_count = sum(1 for e in events if e.kind == 30040)
+    content_count = sum(1 for e in events if e.kind == 30041)
+    
+    # Check for duplicate d-tags
+    d_tags_seen = {}
+    duplicate_d_tags = []
+    for idx, e in enumerate(events):
+        d_tag = None
+        for tag in e.tags:
+            if tag and tag[0] == "d":
+                d_tag = tag[1]
+                break
+        if d_tag:
+            if d_tag in d_tags_seen:
+                duplicate_d_tags.append((d_tag, d_tags_seen[d_tag], idx))
+            else:
+                d_tags_seen[d_tag] = idx
+    
+    if duplicate_d_tags:
+        print(f"⚠ WARNING: Found {len(duplicate_d_tags)} duplicate d-tags:")
+        for d_tag, first_idx, dup_idx in duplicate_d_tags[:10]:
+            print(f"  d-tag '{d_tag}' appears at events {first_idx} and {dup_idx}")
+        if len(duplicate_d_tags) > 10:
+            print(f"  ... and {len(duplicate_d_tags) - 10} more duplicates")
+        print(f"  This should not happen - events may be overwritten on relay!")
+    else:
+        print(f"✓ No duplicate d-tags found ({len(d_tags_seen)} unique d-tags)")
+    
     with events_path.open("w", encoding="utf-8") as f:
         for e in events:
             f.write(e.to_json())
             f.write("\n")
     print(f"Wrote events: {events_path}")
+    print(f"  Total events: {len(events)} ({index_count} index, {content_count} content)")
     # Write simple cache index for determinism/resume
     idx_path = layout.cache_dir / "event_index.json"
     d_list = []
@@ -269,6 +300,13 @@ def build_parser() -> argparse.ArgumentParser:
         "  publisher all \\\n"
         "    --input uploader/input_data/DRM-Bible/publication.html \\\n"
         "    --source-type HTML\n"
+        "\n"
+        "Scripts:\n"
+        "  broadcast_publication <nevent> <relay_url> [--key KEY]\n"
+        "    Broadcast an entire publication to a relay (recursively fetches all events)\n"
+        "\n"
+        "  delete_publication <nevent> <relay_url> [--key KEY]\n"
+        "    Delete an entire publication from a relay (creates kind 5 deletion events)\n"
         "\n"
         "Environment:\n"
         "  SCRIPTORIUM_KEY    nsec... or 64-hex (lowercased automatically)\n"
