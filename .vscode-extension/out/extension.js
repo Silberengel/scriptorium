@@ -34,17 +34,25 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
+exports.findPythonCommand = findPythonCommand;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const child_process_1 = require("child_process");
 const util_1 = require("util");
+const path_1 = require("path");
+const fs_1 = require("fs");
 const panel_1 = require("./panel");
 const treeProvider_1 = require("./treeProvider");
+const readerPanel_1 = require("./readerPanel");
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 function activate(context) {
     console.log('Scriptorium Publisher extension is now active!');
     const provider = new treeProvider_1.ScriptoriumProvider(context.extensionPath);
-    vscode.window.registerTreeDataProvider('scriptoriumEvents', provider);
+    // Use createTreeView which returns a disposable
+    const treeView = vscode.window.createTreeView('scriptoriumEvents', {
+        treeDataProvider: provider
+    });
+    context.subscriptions.push(treeView);
     // Open panel command
     const openPanelCommand = vscode.commands.registerCommand('scriptorium.openPanel', () => {
         panel_1.ScriptoriumPanel.createOrShow(context.extensionPath);
@@ -262,7 +270,137 @@ function activate(context) {
         }
         await runScript('delete_publication', [nevent, relayUrl]);
     });
-    context.subscriptions.push(openPanelCommand, openSettingsCommand, initMetadataCommand, generateCommand, publishCommand, qcCommand, allCommand, broadcastCommand, deleteCommand);
+    // Read publication
+    const readCommand = vscode.commands.registerCommand('scriptorium.read', async () => {
+        const config = vscode.workspace.getConfiguration('scriptorium');
+        const defaultRelay = config.get('relayUrl', 'wss://thecitadel.nostr1.com');
+        // Open reader panel first
+        const panel = readerPanel_1.ReaderPanel.createOrShow(context.extensionPath);
+        // Show input dialog for event reference
+        const eventRef = await vscode.window.showInputBox({
+            prompt: 'Enter publication reference (nevent, naddr, hex ID, or kind:pubkey:d-tag)',
+            placeHolder: 'nevent1..., naddr1..., hex ID, or 30040:pubkey:d-tag'
+        });
+        if (!eventRef) {
+            return;
+        }
+        // Ask for relay URL (optional, will use default if empty)
+        const relayUrlInput = await vscode.window.showInputBox({
+            prompt: 'Enter relay URL (leave empty to use default from settings)',
+            placeHolder: defaultRelay,
+            value: defaultRelay
+        });
+        const relayUrl = relayUrlInput || defaultRelay;
+        // Trigger read in panel
+        panel.triggerRead(eventRef, relayUrl);
+    });
+    // Add file to input directory
+    const addFileCommand = vscode.commands.registerCommand('scriptorium.addFile', async () => {
+        const config = vscode.workspace.getConfiguration('scriptorium');
+        const inputDir = config.get('inputDir', 'uploader/input_data');
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            vscode.window.showErrorMessage('No workspace folder open');
+            return;
+        }
+        // Show file picker
+        const selected = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: true,
+            filters: {
+                'Source Files': ['html', 'adoc', 'md', 'rtf', 'epub'],
+                'All Files': ['*']
+            },
+            title: 'Select files to add to input directory'
+        });
+        if (!selected || selected.length === 0) {
+            return;
+        }
+        const inputPath = vscode.Uri.joinPath(workspaceFolder.uri, inputDir);
+        // Ensure input directory exists
+        try {
+            await vscode.workspace.fs.createDirectory(inputPath);
+        }
+        catch {
+            // Directory might already exist
+        }
+        // Copy files
+        let successCount = 0;
+        for (const fileUri of selected) {
+            try {
+                const fileName = fileUri.path.split('/').pop() || fileUri.path.split('\\').pop() || 'file';
+                const destUri = vscode.Uri.joinPath(inputPath, fileName);
+                await vscode.workspace.fs.copy(fileUri, destUri, { overwrite: true });
+                successCount++;
+            }
+            catch (error) {
+                vscode.window.showErrorMessage(`Failed to copy ${fileUri.fsPath}: ${error.message}`);
+            }
+        }
+        if (successCount > 0) {
+            vscode.window.showInformationMessage(`Added ${successCount} file(s) to ${inputDir}`);
+            // Refresh the panel if it's open
+            panel_1.ScriptoriumPanel.currentPanel?.refreshFileList();
+        }
+    });
+    // Open input folder
+    const openInputFolderCommand = vscode.commands.registerCommand('scriptorium.openInputFolder', async () => {
+        const config = vscode.workspace.getConfiguration('scriptorium');
+        const inputDir = config.get('inputDir', 'uploader/input_data');
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            vscode.window.showErrorMessage('No workspace folder open');
+            return;
+        }
+        const inputPath = vscode.Uri.joinPath(workspaceFolder.uri, inputDir);
+        // Ensure directory exists
+        try {
+            await vscode.workspace.fs.createDirectory(inputPath);
+        }
+        catch {
+            // Directory might already exist
+        }
+        // Open in explorer
+        vscode.commands.executeCommand('revealFileInOS', inputPath);
+    });
+    // Browse for input directory
+    const browseInputDirCommand = vscode.commands.registerCommand('scriptorium.browseInputDir', async () => {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            vscode.window.showErrorMessage('No workspace folder open');
+            return;
+        }
+        // Show folder picker
+        const selected = await vscode.window.showOpenDialog({
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            openLabel: 'Select Input Directory',
+            title: 'Select input directory for source files'
+        });
+        if (!selected || selected.length === 0) {
+            return;
+        }
+        const selectedPath = selected[0];
+        const workspacePath = workspaceFolder.uri;
+        // Calculate relative path from workspace root
+        let relativePath;
+        if (selectedPath.path.startsWith(workspacePath.path)) {
+            // Selected folder is within workspace
+            relativePath = selectedPath.path.substring(workspacePath.path.length + 1);
+        }
+        else {
+            // Selected folder is outside workspace - show error
+            vscode.window.showErrorMessage('Selected folder must be within the workspace');
+            return;
+        }
+        // Update setting
+        const config = vscode.workspace.getConfiguration('scriptorium');
+        await config.update('inputDir', relativePath, vscode.ConfigurationTarget.Workspace);
+        vscode.window.showInformationMessage(`Input directory set to: ${relativePath}`);
+    });
+    context.subscriptions.push(openPanelCommand, openSettingsCommand, initMetadataCommand, generateCommand, publishCommand, qcCommand, allCommand, broadcastCommand, deleteCommand, readCommand, addFileCommand, openInputFolderCommand, browseInputDirCommand);
 }
 async function getActiveFilePath() {
     const editor = vscode.window.activeTextEditor;
@@ -272,6 +410,21 @@ async function getActiveFilePath() {
     return undefined;
 }
 async function findPythonCommand() {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    // Check for virtual environment first
+    if (workspaceFolder) {
+        const venvPath = (0, path_1.join)(workspaceFolder.uri.fsPath, '.venv', 'bin', 'python3');
+        if ((0, fs_1.existsSync)(venvPath)) {
+            // Verify it works
+            try {
+                await execAsync(`"${venvPath}" --version`);
+                return venvPath;
+            }
+            catch {
+                // Venv exists but doesn't work, continue to other options
+            }
+        }
+    }
     // Try python3 first (common on Linux/Mac), then python
     try {
         await execAsync('python3 --version');
@@ -388,5 +541,7 @@ async function runScript(script, args) {
         }
     });
 }
-function deactivate() { }
+function deactivate() {
+    // Cleanup is handled by VS Code through context.subscriptions
+}
 //# sourceMappingURL=extension.js.map

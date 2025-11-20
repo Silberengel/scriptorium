@@ -1,16 +1,27 @@
-title: Drb
-author: ''
+title: Douay-Rheims Bible
+author: Challoner
 language: en
-collection_id: drb
+collection_id: bible
 has_collection: true
+use_bookstr: true
+book_title_mapping_file: book_title_map.yml
+published_on: 1749
+published_by: public domain
+summary: The Douay-Rheims Bible is a translation of the Bible into English by the Catholic Church. It is based on the Latin Vulgate.
+type: bible
+auto_update: ask
+source: public domain
+image: https://i.nostr.build/4xYNbjQ6mjh3syKa.jpg
+version: DRB
+derivative_author: null
+derivative_event: null
+derivative_relay: null
+derivative_pubkey: null
+additional_tags: null
 levels:
   collection: Collection
   book: Book
   chapter: Chapter
   verse: Verse
 wikistr_mappings: []
-use_bookstr: true
-book_title_mapping_file: book_title_map.yml
 book_metadata: []
-type: book
-auto_update: ask

@@ -76,9 +76,29 @@
         "icon": "$(trash)"
       },
       {
+        "command": "scriptorium.read",
+        "title": "Scriptorium: Read Publication",
+        "icon": "$(book)"
+      },
+      {
         "command": "scriptorium.openSettings",
         "title": "Scriptorium: Open Settings",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "scriptorium.addFile",
+        "title": "Scriptorium: Add File to Input Directory",
+        "icon": "$(add)"
+      },
+      {
+        "command": "scriptorium.openInputFolder",
+        "title": "Scriptorium: Open Input Folder",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "scriptorium.browseInputDir",
+        "title": "Scriptorium: Browse for Input Directory",
+        "icon": "$(folder)"
       }
     ],
     "configuration": {
@@ -96,6 +116,12 @@
           "description": "Nostr secret key (nsec or hex). Leave empty to use SCRIPTORIUM_KEY env var.",
           "markdownDescription": "Your Nostr secret key in nsec format (e.g., `nsec1...`) or hex format. If left empty, the extension will use the `SCRIPTORIUM_KEY` environment variable.",
           "scope": "application"
+        },
+        "scriptorium.inputDir": {
+          "type": "string",
+          "default": "uploader/input_data",
+          "description": "Input directory for source files",
+          "markdownDescription": "Directory containing source files to process. Default: `uploader/input_data`. Use the command 'Scriptorium: Browse for Input Directory' to select a folder, or open the Scriptorium Publisher Panel to manage files."
         },
         "scriptorium.outputDir": {
           "type": "string",

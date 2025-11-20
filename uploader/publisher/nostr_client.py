@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import json
+import sys
 import time
 import hashlib
 import shutil
@@ -188,14 +189,30 @@ async def publish_events_ndjson(
     # Phase 2: Compute IDs and sign all events at once
     print(f"Computing IDs and signing {len(prepared_events)} events...")
     events_list = []
-    with tqdm(total=len(prepared_events), desc="Signing events", unit="event") as pbar:
-        for event_json in prepared_events:
+    if sys.stdout.isatty():
+        pbar = tqdm(total=len(prepared_events), desc="Signing events", unit="event")
+    else:
+        pbar = None
+    try:
+        for idx, event_json in enumerate(prepared_events):
             # Compute ID and signature
             event_id = _compute_event_id(event_json)
             event_json["id"] = event_id
             event_json["sig"] = _sign_event(event_json, priv_hex)
             events_list.append(event_json)
-            pbar.update(1)
+            if pbar:
+                pbar.update(1)
+            elif (idx + 1) % 100 == 0:
+                print(f"  Signed {idx + 1}/{len(prepared_events)} events...")
+    except KeyboardInterrupt:
+        if pbar:
+            pbar.close()
+        print(f"\n\n⚠ Publishing interrupted by user.")
+        print(f"  Signed {len(events_list)}/{len(prepared_events)} events before interruption.")
+        return {"verified": False, "error": "Publishing interrupted by user", "interrupted": True}
+    finally:
+        if pbar:
+            pbar.close()
     
     # Write complete events (with IDs and signatures) back to the file
     # This ensures we have valid Nostr events for republishing
@@ -355,46 +372,78 @@ async def publish_events_ndjson(
             errors.append(f"Traceback: {traceback.format_exc()}")
     
     # Run with progress bar
-    with tqdm(total=total, desc="Publishing", unit="ev") as pbar:
+    if sys.stdout.isatty():
+        pbar = tqdm(total=total, desc="Publishing", unit="ev")
+    else:
+        pbar = None
+    try:
         # Start publishing task
         publish_task = asyncio.create_task(_publish_all())
         
         # Update progress bar as events are published
         connection_established = False
         waiting_shown = False
-        while not publish_task.done() or not progress_queue.empty():
-            try:
-                item = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
-                if item == "connected":
-                    if not connection_established:
-                        connection_established = True
-                        print(f"\nConnected to relay, starting publish...")
-                elif item == "waiting":
-                    if not waiting_shown:
-                        waiting_shown = True
-                        print(f"\nWaiting for relay responses...")
-                elif item == 1:
-                    pbar.update(1)
-            except asyncio.TimeoutError:
-                # Check if task is done
-                if publish_task.done():
+        published_so_far = 0
+        try:
+            while not publish_task.done() or not progress_queue.empty():
+                try:
+                    item = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+                    if item == "connected":
+                        if not connection_established:
+                            connection_established = True
+                            print(f"\nConnected to relay, starting publish...")
+                    elif item == "waiting":
+                        if not waiting_shown:
+                            waiting_shown = True
+                            print(f"\nWaiting for relay responses...")
+                    elif item == 1:
+                        published_so_far += 1
+                        if pbar:
+                            pbar.update(1)
+                        elif published_so_far % 100 == 0:
+                            print(f"  Published {published_so_far}/{total} events...")
+                except asyncio.TimeoutError:
+                    # Check if task is done
+                    if publish_task.done():
+                        break
+                    continue
+            
+            # Wait for completion
+            await publish_task
+            
+            # Drain any remaining progress items (but don't update bar multiple times)
+            remaining = 0
+            while not progress_queue.empty():
+                try:
+                    item = progress_queue.get_nowait()
+                    if item == 1:
+                        remaining += 1
+                except asyncio.QueueEmpty:
                     break
-                continue
-        
-        # Wait for completion
-        await publish_task
-        
-        # Drain any remaining progress items (but don't update bar multiple times)
-        remaining = 0
-        while not progress_queue.empty():
-            try:
-                item = progress_queue.get_nowait()
-                if item == 1:
-                    remaining += 1
-            except asyncio.QueueEmpty:
-                break
-        if remaining > 0:
-            pbar.update(remaining)
+            if remaining > 0:
+                if pbar:
+                    pbar.update(remaining)
+                else:
+                    published_so_far += remaining
+                    print(f"  Published {published_so_far}/{total} events...")
+        except KeyboardInterrupt:
+            # Cancel the publishing task
+            if not publish_task.done():
+                publish_task.cancel()
+                try:
+                    await publish_task
+                except asyncio.CancelledError:
+                    pass
+            
+            if pbar:
+                pbar.close()
+            
+            print(f"\n\n⚠ Publishing interrupted by user.")
+            print(f"  Published {published_so_far}/{total} events before interruption.")
+            return {"verified": False, "error": "Publishing interrupted by user", "interrupted": True}
+    finally:
+        if pbar:
+            pbar.close()
     
     if errors:
         print(f"\nWARNING: {len(errors)} errors occurred during publishing.")
@@ -415,58 +464,63 @@ async def publish_events_ndjson(
     # Verify first event was actually published
     verification_result = {"verified": False, "error": None}
     if first_event_d_tag and first_event_kind and published_count > 0:
-        print(f"\nVerifying publication by querying relay for first event...")
-        print(f"  Looking for: kind={first_event_kind}, d={first_event_d_tag}, author={pub_hex[:16]}...")
-        # Wait a bit for events to propagate on the relay
-        await asyncio.sleep(2)
-        
         try:
-            async with websockets.connect(relay_url) as ws:
-                # Send REQ message: ["REQ", subscription_id, filters]
-                subscription_id = "verify"
-                filters = {
-                    "authors": [pub_hex],
-                    "kinds": [first_event_kind],
-                    "#d": [first_event_d_tag]
-                }
-                await ws.send(json.dumps(["REQ", subscription_id, filters]))
-                
-                # Wait for events or EOSE
-                events_found = []
-                timeout = 10.0
-                start_time = time.time()
-                
-                while time.time() - start_time < timeout:
-                    try:
-                        response = await asyncio.wait_for(ws.recv(), timeout=2.0)
-                        resp_data = json.loads(response)
-                        
-                        if resp_data[0] == "EVENT" and resp_data[1] == subscription_id:
-                            # Got an event
-                            events_found.append(resp_data[2])
-                        elif resp_data[0] == "EOSE" and resp_data[1] == subscription_id:
-                            # End of stored events
-                            break
-                        elif resp_data[0] == "NOTICE":
-                            # Relay notice, ignore
-                            continue
-                    except asyncio.TimeoutError:
-                        # No more responses
-                        break
-                
-                # Close subscription
-                await ws.send(json.dumps(["CLOSE", subscription_id]))
-                
-                verification_result["verified"] = len(events_found) > 0
-                if not verification_result["verified"]:
-                    verification_result["error"] = f"First event (d={first_event_d_tag}) not found on relay"
-                else:
-                    print(f"  ✓ Found event on relay")
+            print(f"\nVerifying publication by querying relay for first event...")
+            print(f"  Looking for: kind={first_event_kind}, d={first_event_d_tag}, author={pub_hex[:16]}...")
+            # Wait a bit for events to propagate on the relay
+            await asyncio.sleep(2)
+            
+            try:
+                async with websockets.connect(relay_url) as ws:
+                    # Send REQ message: ["REQ", subscription_id, filters]
+                    subscription_id = "verify"
+                    filters = {
+                        "authors": [pub_hex],
+                        "kinds": [first_event_kind],
+                        "#d": [first_event_d_tag]
+                    }
+                    await ws.send(json.dumps(["REQ", subscription_id, filters]))
                     
-        except Exception as e:
-            verification_result["error"] = f"Verification error: {e}"
-            import traceback
-            print(f"  Verification exception: {traceback.format_exc()}")
+                    # Wait for events or EOSE
+                    events_found = []
+                    timeout = 10.0
+                    start_time = time.time()
+                    
+                    while time.time() - start_time < timeout:
+                        try:
+                            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                            resp_data = json.loads(response)
+                            
+                            if resp_data[0] == "EVENT" and resp_data[1] == subscription_id:
+                                # Got an event
+                                events_found.append(resp_data[2])
+                            elif resp_data[0] == "EOSE" and resp_data[1] == subscription_id:
+                                # End of stored events
+                                break
+                            elif resp_data[0] == "NOTICE":
+                                # Relay notice, ignore
+                                continue
+                        except asyncio.TimeoutError:
+                            # No more responses
+                            break
+                    
+                    # Close subscription
+                    await ws.send(json.dumps(["CLOSE", subscription_id]))
+                    
+                    verification_result["verified"] = len(events_found) > 0
+                    if not verification_result["verified"]:
+                        verification_result["error"] = f"First event (d={first_event_d_tag}) not found on relay"
+                    else:
+                        print(f"  ✓ Found event on relay")
+                        
+            except Exception as e:
+                verification_result["error"] = f"Verification error: {e}"
+                import traceback
+                print(f"  Verification exception: {traceback.format_exc()}")
+        except KeyboardInterrupt:
+            print(f"\n⚠ Verification interrupted by user.")
+            verification_result["error"] = "Verification interrupted by user"
+            verification_result["interrupted"] = True
     
     return verification_result
 
@@ -607,7 +661,11 @@ async def qc_check_events(
         chunk_size = 100
         total_id_chunks = (len(event_ids) + chunk_size - 1) // chunk_size
         
-        with tqdm(total=total_id_chunks, desc="QC: Querying by event ID", unit="chunk") as pbar:
+        if sys.stdout.isatty():
+            pbar = tqdm(total=total_id_chunks, desc="QC: Querying by event ID", unit="chunk")
+        else:
+            pbar = None
+        try:
             for i in range(0, len(event_ids), chunk_size):
                 chunk_ids = event_ids[i:i + chunk_size]
                 filter_dict = {
@@ -624,7 +682,13 @@ async def qc_check_events(
                 except Exception as e:
                     errors.append(f"Error querying event IDs (chunk {i//chunk_size + 1}): {e}")
                 
-                pbar.update(1)
+                if pbar:
+                    pbar.update(1)
+                elif (i // chunk_size + 1) % 10 == 0:
+                    print(f"  Queried {i // chunk_size + 1}/{total_id_chunks} chunks...")
+        finally:
+            if pbar:
+                pbar.close()
     
     # Query by d-tags (to check if any version exists)
     # This is a fallback - if we find any version with the same d-tag, that's enough
@@ -634,7 +698,12 @@ async def qc_check_events(
         total_d_tag_chunks += (len(d_tags) + chunk_size - 1) // chunk_size
     
     if total_d_tag_chunks > 0:
-        with tqdm(total=total_d_tag_chunks, desc="QC: Querying by d-tag", unit="chunk") as pbar:
+        if sys.stdout.isatty():
+            pbar = tqdm(total=total_d_tag_chunks, desc="QC: Querying by d-tag", unit="chunk")
+        else:
+            pbar = None
+        try:
+            chunk_count = 0
             for kind, d_tags in d_tags_by_kind.items():
                 chunk_size = 100
                 for i in range(0, len(d_tags), chunk_size):
@@ -658,7 +727,14 @@ async def qc_check_events(
                     except Exception as e:
                         errors.append(f"Error querying kind {kind} by d-tag (chunk {i//chunk_size + 1}): {e}")
                     
-                    pbar.update(1)
+                    chunk_count += 1
+                    if pbar:
+                        pbar.update(1)
+                    elif chunk_count % 10 == 0:
+                        print(f"  Queried {chunk_count}/{total_d_tag_chunks} chunks...")
+        finally:
+            if pbar:
+                pbar.close()
     
     # Compare found vs expected
     # An event is considered "found" if:

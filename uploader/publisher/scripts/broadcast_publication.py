@@ -358,8 +358,8 @@ async def publish_events_to_relay(
             print(f"Connected to {relay_url}")
             print(f"Publishing {len(prepared_events)} events...")
             
-            # Create progress bar if tqdm is available
-            if HAS_TQDM:
+            # Create progress bar if tqdm is available and we're in a TTY
+            if HAS_TQDM and sys.stdout.isatty():
                 pbar = tqdm(total=len(prepared_events), desc="Publishing", unit="events")
             else:
                 pbar = None

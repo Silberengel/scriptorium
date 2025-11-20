@@ -339,7 +339,7 @@ async def create_and_publish_deletions(
     deletion_events = []
     
     print(f"Creating {len(events_to_delete)} deletion events...")
-    if HAS_TQDM:
+    if HAS_TQDM and sys.stdout.isatty():
         pbar = tqdm(total=len(events_to_delete), desc="Creating deletions", unit="events")
     else:
         pbar = None
@@ -382,8 +382,8 @@ async def create_and_publish_deletions(
             print(f"Connected to {relay_url}")
             print(f"Publishing {len(deletion_events)} deletion events...")
             
-            # Create progress bar if tqdm is available
-            if HAS_TQDM:
+            # Create progress bar if tqdm is available and we're in a TTY
+            if HAS_TQDM and sys.stdout.isatty():
                 pbar = tqdm(total=len(deletion_events), desc="Publishing deletions", unit="events")
             else:
                 pbar = None
