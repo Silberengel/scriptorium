@@ -64,18 +64,24 @@ Step-by-step workflow
        - `derivative_pubkey`: Pubkey for original event (optional, defaults to derivative_author if not specified)
      - `language`, `collection_id`, `has_collection`
      
-   - **Bookstr Macro Configuration** (`use_bookstr: true`):
-     - `use_bookstr: true|false` (enables bookstr macro tags for searchability)
-     - `version`: Translation/version identifier for bookstr macro (e.g., "DRB" for Douay-Rheims Bible, "KJV" for King James Version)
+   - **NKBIP-08 Book Wikilinks Configuration** (`use_bookstr: true`):
+     - `use_bookstr: true|false` (enables NKBIP-08 tags for book wikilink searchability)
+     - `version`: Translation/version identifier (e.g., "DRB" for Douay-Rheims Bible, "KJV" for King James Version)
        - For Bibles, use standard abbreviations: KJV, NKJV, NIV, ESV, NASB, NLT, MSG, CEV, NRSV, RSV, ASV, YLT, WEB, GNV, DRB, etc.
-       - The version tag is added to all events (kind 30040 and 30041) when `use_bookstr: true`
-     - Bookstr tags added to events:
-       - `type`: Publication type (from metadata)
-       - `book`: Canonical book name (lowercase, hyphenated)
-       - `chapter`: Chapter number (for chapter indexes and verse content)
-       - `verse`: Verse number (for verse content)
-       - `version`: Translation/version identifier (lowercase)
-     - These tags enable the wikistr bookstr macro to search and reference specific verses, chapters, and books
+       - The version tag is normalized and added to all events (kind 30040 and 30041) when `use_bookstr: true`
+     - NKBIP-08 tags added to events (hierarchical - each level includes parent tags):
+       - `C`: Collection identifier (normalized, lowercase, hyphenated)
+       - `T`: Title/book identifier (normalized, lowercase, hyphenated)
+       - `c`: Chapter identifier (normalized, lowercase, hyphenated)
+       - `s`: Section/verse identifier (normalized, lowercase, hyphenated) - only on content events (30041)
+       - `v`: Version identifier (normalized, lowercase, hyphenated) - added to all events if specified
+     - Tag hierarchy:
+       - Collection root (30040): `C`, `T`, `v` (if version specified)
+       - Book/Title events (30040): `C`, `T`, `v` (if version specified)
+       - Chapter events (30040): `C`, `T`, `c`, `v` (if version specified)
+       - Section/Verse events (30041): `C`, `T`, `c`, `s`, `v` (if version specified)
+     - The `type` tag is a formatting hint for clients (default: "book", can be "bible", "magazine", etc.) and is separate from NKBIP-08 tags
+     - These tags enable the wikistr bookstr macro to search and reference specific verses, chapters, and books using wikilinks like `[[book::bible | genesis 2:4 | kjv]]`
      
    - Optional mappings (choose either or both):
      - Inline list:
@@ -106,11 +112,22 @@ Step-by-step workflow
    - Re-run generate to apply metadata/mappings:
      - `python -m uploader.publisher.cli generate --input uploader/input_data/{collection_slug}/publication.html --source-type HTML --promote-default-structure [--ascii-only]`
      - Events are generated with NKBIP-01 and NKBIP-08 compliant tags:
-     - Collection root (kind 30040): `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, `auto-update`, `source`, `image` (if specified), `p` and `E` (for derivative works), plus NKBIP-08 tags `C` (collection), `T` (title), `v` (version if specified), plus any `additional_tags`
-     - Book/Chapter indexes (kind 30040): `type`, `book`, `chapter` (if applicable), `version` (if `use_bookstr: true` and version specified), `auto-update`, plus NKBIP-08 tags `T` (title for book), `c` (chapter for chapter index), `v` (version if specified)
-     - Verse content (kind 30041): `type`, `book`, `chapter`, `verse` (if applicable), `version` (if `use_bookstr: true` and version specified), plus NKBIP-08 tags `C` (collection), `T` (title/book), `c` (chapter), `s` (section/verse), `v` (version if specified)
+     - **Collection root (kind 30040)**: 
+       - NKBIP-01: `title`, `author`, `publisher`, `published_on`, `published_by`, `summary`, `type`, `auto-update`, `source`, `image` (if specified), `p` and `E` (for derivative works), plus any `additional_tags`
+       - NKBIP-08: `C` (collection), `T` (title), `v` (version if specified)
+     - **Book/Title events (kind 30040)**:
+       - NKBIP-01: `type`, `auto-update`
+       - NKBIP-08: `C` (collection), `T` (title/book), `v` (version if specified)
+       - Note: T-level events only contain c-level (chapter) events. Any 30041 sections directly under a T-level event are placed under a "Preamble" 30040 chapter event.
+     - **Chapter events (kind 30040)**:
+       - NKBIP-01: `type`, `auto-update`
+       - NKBIP-08: `C` (collection), `T` (title/book, inherited), `c` (chapter), `v` (version if specified)
+     - **Section/Verse content (kind 30041)**:
+       - NKBIP-01: `type`
+       - NKBIP-08: `C` (collection), `T` (title/book), `c` (chapter), `s` (section/verse), `v` (version if specified)
      - All index events (kind 30040) include `a` tags referencing their child events in format `["a", "<kind:pubkey:dtag>", "<relay hint>", "<event id>"]` (added during publishing)
-     - NKBIP-08 tags enable book wikilink resolution (e.g., `[[book::genesis 2:4 | kjv]]`)
+     - NKBIP-08 tags enable book wikilink resolution (e.g., `[[book::bible | genesis 2:4 | kjv]]`)
+     - All tag values are normalized using NIP-54 rules (lowercase, non-alphanumeric to hyphens, quotes removed, multiple hyphens collapsed)
    - Outputs:
      - `uploader/publisher/out/events/events.ndjson` (serialized events ready for publishing)
      - `uploader/publisher/out/cache/event_index.json` (quick index)
@@ -139,7 +156,7 @@ Step-by-step workflow
 Commands
 --------
 - init-metadata: infer and create @metadata.yml next to your source
-- generate: convert source → AsciiDoc and generate NKBIP-01 compliant bookstr events
+- generate: convert source → AsciiDoc and generate NKBIP-01 and NKBIP-08 compliant events
 - publish: publish events to relay with verification (adds `a` tags to index events)
 - qc: verify presence on relay and republish missing events (use `--republish` to auto-republish)
 - all: run generate → publish → qc in sequence
