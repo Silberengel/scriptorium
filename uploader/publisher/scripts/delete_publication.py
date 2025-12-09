@@ -223,6 +223,7 @@ async def fetch_all_events_breadth_first(
     collected: Set[str],
     errors: List[str],
     progress_callback: Optional[Callable[[int], None]] = None,
+    fallback_relays: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch all events in a publication tree using breadth-first batching.
@@ -296,53 +297,79 @@ async def fetch_all_events_breadth_first(
             a_tag_groups[key].append((d_tag, a_value))
         
         # Fetch all a-tag events in batches
+        # Query by kind and pubkey first, then match by d-tag (since a-tag d-tags might be wrong)
         next_level = []
         for (pubkey, kind), d_tag_list in a_tag_groups.items():
-            # Create filter for all d-tags of this kind/pubkey
-            d_tags = [d_tag for d_tag, _ in d_tag_list]
+            # Query ALL events of this kind/pubkey (don't filter by d-tag since they might be wrong)
             filters = [{
                 "authors": [pubkey],
                 "kinds": [kind],
-                "#d": d_tags,
             }]
             
-            try:
-                fetched_events = await query_events_from_relay(relay_url, pubkey, filters, timeout=60.0)
+            # Try primary relay first
+            fetched_events = []
+            relays_to_try = [relay_url]
+            if fallback_relays:
+                relays_to_try.extend(fallback_relays)
+            
+            for try_relay in relays_to_try:
+                try:
+                    fetched_events = await query_events_from_relay(try_relay, pubkey, filters, timeout=60.0)
+                    if fetched_events:
+                        break  # Found events, no need to try other relays
+                except Exception as e:
+                    if try_relay == relays_to_try[-1]:  # Last relay, record error
+                        errors.append(f"Error fetching events for {pubkey}/{kind} from all relays: {e}")
+                    continue
+            
+            # Build map of actual d-tags to events (from fetched events)
+            actual_d_tag_to_event = {}
+            for event in fetched_events:
+                # Find actual d-tag in event
+                event_d_tag = None
+                for tag in event.get("tags", []):
+                    if tag and len(tag) > 0 and tag[0] == "d":
+                        event_d_tag = tag[1] if len(tag) > 1 else ""
+                        break
                 
-                # Map d-tags to events (take latest for each d-tag)
-                d_tag_to_event = {}
-                for event in fetched_events:
-                    # Find d-tag in event
-                    event_d_tag = None
-                    for tag in event.get("tags", []):
-                        if tag and len(tag) > 0 and tag[0] == "d":
-                            event_d_tag = tag[1] if len(tag) > 1 else ""
-                            break
-                    
-                    if event_d_tag and event_d_tag in d_tags:
-                        # Keep the latest event for this d-tag
-                        if event_d_tag not in d_tag_to_event:
-                            d_tag_to_event[event_d_tag] = event
-                        else:
-                            existing = d_tag_to_event[event_d_tag]
-                            if event.get("created_at", 0) > existing.get("created_at", 0):
-                                d_tag_to_event[event_d_tag] = event
-                
-                # Add fetched events to next level
-                for d_tag, a_value in d_tag_list:
-                    if d_tag in d_tag_to_event:
-                        event = d_tag_to_event[d_tag]
-                        event_id = event.get("id")
-                        if event_id not in collected:
-                            collected.add(event_id)
-                            all_events.append(event)
-                            next_level.append(event)
-                            if progress_callback:
-                                progress_callback(len(collected))
+                if event_d_tag:
+                    # Keep the latest event for this d-tag
+                    if event_d_tag not in actual_d_tag_to_event:
+                        actual_d_tag_to_event[event_d_tag] = event
                     else:
-                        errors.append(f"Child event not found: {a_value}")
-            except Exception as e:
-                errors.append(f"Error batch fetching events for {pubkey}/{kind}: {e}")
+                        existing = actual_d_tag_to_event[event_d_tag]
+                        if event.get("created_at", 0) > existing.get("created_at", 0):
+                            actual_d_tag_to_event[event_d_tag] = event
+            
+            # Now match a-tag d-tags to actual events
+            # Try exact match first, then fuzzy match (d-tags might have changed)
+            for a_tag_d_tag, a_value in d_tag_list:
+                matched_event = None
+                
+                # Try exact match first
+                if a_tag_d_tag in actual_d_tag_to_event:
+                    matched_event = actual_d_tag_to_event[a_tag_d_tag]
+                else:
+                    # Try fuzzy matching - check if any actual d-tag ends with the same suffix
+                    # This handles cases where d-tags were regenerated with different prefixes
+                    a_tag_suffix = "-".join(a_tag_d_tag.split("-")[-3:])  # Last 3 segments
+                    for actual_d_tag, event in actual_d_tag_to_event.items():
+                        actual_suffix = "-".join(actual_d_tag.split("-")[-3:])
+                        if a_tag_suffix == actual_suffix:
+                            matched_event = event
+                            break
+                
+                if matched_event:
+                    event_id = matched_event.get("id")
+                    if event_id not in collected:
+                        collected.add(event_id)
+                        all_events.append(matched_event)
+                        next_level.append(matched_event)
+                        if progress_callback:
+                            progress_callback(len(collected))
+                else:
+                    # Event not found - record error
+                    errors.append(f"Child event not found: {a_value} (looked for d-tag: {a_tag_d_tag})")
         
         # Fetch events by e-tags (batch by IDs)
         if e_tags_to_fetch:
@@ -354,19 +381,30 @@ async def fetch_all_events_breadth_first(
                 chunk = event_ids[i:i + chunk_size]
                 filters = [{"ids": chunk}]
                 
-                try:
-                    fetched_events = await query_events_from_relay(relay_url, root_event.get("pubkey", ""), filters, timeout=60.0)
-                    
-                    for event in fetched_events:
-                        event_id = event.get("id")
-                        if event_id not in collected:
-                            collected.add(event_id)
-                            all_events.append(event)
-                            next_level.append(event)
-                            if progress_callback:
-                                progress_callback(len(collected))
-                except Exception as e:
-                    errors.append(f"Error batch fetching events by IDs: {e}")
+                # Try primary relay first, then fallbacks
+                fetched_events = []
+                relays_to_try = [relay_url]
+                if fallback_relays:
+                    relays_to_try.extend(fallback_relays)
+                
+                for try_relay in relays_to_try:
+                    try:
+                        fetched_events = await query_events_from_relay(try_relay, root_event.get("pubkey", ""), filters, timeout=60.0)
+                        if fetched_events:
+                            break
+                    except Exception as e:
+                        if try_relay == relays_to_try[-1]:
+                            errors.append(f"Error batch fetching events by IDs: {e}")
+                        continue
+                
+                for event in fetched_events:
+                    event_id = event.get("id")
+                    if event_id not in collected:
+                        collected.add(event_id)
+                        all_events.append(event)
+                        next_level.append(event)
+                        if progress_callback:
+                            progress_callback(len(collected))
         
         # Move to next level
         current_level = next_level
@@ -648,6 +686,16 @@ Examples:
                 print(f"  Fetched {count} events...", end='\r')
                 last_progress_print = current_time
     
+    # Determine fallback relays for fetching (use relay hint if different from query relay)
+    fallback_relays = []
+    if "relay_hint" in ref_data and ref_data.get("relay_hint"):
+        relay_hint = ref_data["relay_hint"]
+        if relay_hint != query_relay and relay_hint not in fallback_relays:
+            fallback_relays.append(relay_hint)
+    # Always try thecitadel as fallback
+    if "wss://thecitadel.nostr1.com" not in [query_relay] + fallback_relays:
+        fallback_relays.append("wss://thecitadel.nostr1.com")
+    
     try:
         all_events = await fetch_all_events_breadth_first(
             query_relay,
@@ -655,6 +703,7 @@ Examples:
             collected,
             errors,
             progress_callback,
+            fallback_relays=fallback_relays if fallback_relays else None,
         )
     finally:
         if pbar is not None:
@@ -665,10 +714,25 @@ Examples:
     print(f"✓ Collected {len(all_events)} events to delete")
     if errors:
         print(f"⚠ {len(errors)} errors occurred while fetching:")
-        for err in errors[:10]:
-            print(f"  - {err}")
-        if len(errors) > 10:
-            print(f"  ... and {len(errors) - 10} more")
+        # Group errors by type for better reporting
+        not_found_count = sum(1 for e in errors if "not found" in e.lower())
+        other_errors = [e for e in errors if "not found" not in e.lower()]
+        
+        if not_found_count > 0:
+            print(f"  - {not_found_count} events not found on relay (may be on different relay or already deleted)")
+        if other_errors:
+            print(f"  - {len(other_errors)} other errors:")
+            for err in other_errors[:10]:
+                print(f"    {err}")
+            if len(other_errors) > 10:
+                print(f"    ... and {len(other_errors) - 10} more")
+        
+        # Show sample of not-found errors
+        not_found_samples = [e for e in errors if "not found" in e.lower()][:5]
+        if not_found_samples:
+            print(f"\n  Sample of not-found events:")
+            for err in not_found_samples:
+                print(f"    {err}")
     
     # Confirm deletion
     print(f"\n⚠ WARNING: About to delete {len(all_events)} events from {publish_relay}")
