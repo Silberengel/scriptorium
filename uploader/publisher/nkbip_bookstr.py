@@ -53,6 +53,51 @@ class Event:
         return orjson.dumps({"kind": self.kind, "tags": self.tags, "content": self.content}).decode("utf-8")
 
 
+def _add_book_t_tags(tags: List[List[str]], book_title: str, book_title_map: dict[str, dict[str, str] | str] | None) -> None:
+    """
+    Add all three T tags for a book: display, canonical-long, and canonical-short.
+    This allows searching by any variant: T=The Book of Genesis, T=Genesis, or T=Gen
+    """
+    if not book_title:
+        return
+    
+    # Get canonical info from map if available
+    canon_info = None
+    if book_title_map:
+        canon_info = book_title_map.get(book_title.lower())
+    
+    # Add T tag for display title (normalized)
+    display_tag = normalize_nkbip08_tag_value(book_title)
+    if display_tag:
+        tags.append(["T", display_tag])
+    
+    # Add T tags for canonical names if available
+    if canon_info:
+        if isinstance(canon_info, dict):
+            canon_long = canon_info.get("canonical-long", "")
+            canon_short = canon_info.get("canonical-short", "")
+            
+            # Add canonical-long T tag (normalized)
+            canon_long_tag = None
+            if canon_long:
+                canon_long_tag = normalize_nkbip08_tag_value(canon_long)
+                if canon_long_tag and canon_long_tag != display_tag:  # Avoid duplicates
+                    tags.append(["T", canon_long_tag])
+            
+            # Add canonical-short T tag (normalized)
+            if canon_short and canon_short != canon_long:  # Only add if different from long
+                canon_short_tag = normalize_nkbip08_tag_value(canon_short)
+                if canon_short_tag and canon_short_tag != display_tag:
+                    # Also check against canonical-long tag if it was added
+                    if canon_long_tag is None or canon_short_tag != canon_long_tag:
+                        tags.append(["T", canon_short_tag])
+        else:
+            # Old format: single canonical string
+            canon_tag = normalize_nkbip08_tag_value(str(canon_info))
+            if canon_tag and canon_tag != display_tag:  # Avoid duplicates
+                tags.append(["T", canon_tag])
+
+
 def _d_for(*parts: str) -> str:
     """
     Build a strict d-tag using only ASCII letters, digits, and hyphens.
@@ -412,25 +457,14 @@ def serialize_bookstr(
         
         # T tag (title) - for title/book events (collection root or book index)
         if is_collection_root or is_book:
-            t_tag_value = None
             if is_collection_root and metadata and hasattr(metadata, "title") and metadata.title:
-                # Collection root uses metadata title
+                # Collection root uses metadata title (single T tag)
                 t_tag_value = normalize_nkbip08_tag_value(metadata.title)
+                if t_tag_value:
+                    tags.append(["T", t_tag_value])
             elif is_book and maybe_book_title:
-                # Book index uses canonical name if available, otherwise display title
-                if book_title_map:
-                    canon_info = book_title_map.get(maybe_book_title.lower())
-                    if canon_info:
-                        if isinstance(canon_info, dict):
-                            canon_long = canon_info.get("canonical-long", "")
-                            if canon_long:
-                                t_tag_value = normalize_nkbip08_tag_value(canon_long)
-                        else:
-                            t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
-                if not t_tag_value:
-                    t_tag_value = normalize_nkbip08_tag_value(maybe_book_title)
-            if t_tag_value:
-                tags.append(["T", t_tag_value])
+                # Book index: add all three T tags (display, canonical-long, canonical-short)
+                _add_book_t_tags(tags, maybe_book_title, book_title_map)
         
         # For chapter events, we need to inherit T tag from parent book
         # We'll compute it from the path structure
@@ -445,20 +479,8 @@ def serialize_bookstr(
                     book_title_for_t = d_path[-2] if len(d_path) >= 2 else None
                 
                 if book_title_for_t:
-                    t_tag_value = None
-                    if book_title_map:
-                        canon_info = book_title_map.get(book_title_for_t.lower())
-                        if canon_info:
-                            if isinstance(canon_info, dict):
-                                canon_long = canon_info.get("canonical-long", "")
-                                if canon_long:
-                                    t_tag_value = normalize_nkbip08_tag_value(canon_long)
-                            else:
-                                t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
-                    if not t_tag_value:
-                        t_tag_value = normalize_nkbip08_tag_value(book_title_for_t)
-                    if t_tag_value:
-                        tags.append(["T", t_tag_value])
+                    # Add all three T tags (display, canonical-long, canonical-short)
+                    _add_book_t_tags(tags, book_title_for_t, book_title_map)
             
             # c tag (chapter) - for chapter index events
             chapter_match = re.search(r'chapter\s+(\d+)', title, re.IGNORECASE)
@@ -570,20 +592,8 @@ def serialize_bookstr(
                     book_title_for_tag = titles[0]  # Use first title as fallback
                 
                 if book_title_for_tag:
-                    t_tag_value = None
-                    if book_title_map:
-                        canon_info = book_title_map.get(book_title_for_tag.lower())
-                        if canon_info:
-                            if isinstance(canon_info, dict):
-                                canon_long = canon_info.get("canonical-long", "")
-                                if canon_long:
-                                    t_tag_value = normalize_nkbip08_tag_value(canon_long)
-                            else:
-                                t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
-                    if not t_tag_value:
-                        t_tag_value = normalize_nkbip08_tag_value(book_title_for_tag)
-                    if t_tag_value:
-                        s_tags.append(["T", t_tag_value])
+                    # Add all three T tags (display, canonical-long, canonical-short)
+                    _add_book_t_tags(s_tags, book_title_for_tag, book_title_map)
             
             # c tag (chapter) - try to find chapter from parent path if available
             # Look for a title that contains "chapter" in the path (excluding the last one which is the section)
@@ -691,20 +701,8 @@ def serialize_bookstr(
         # T tag (title/book) - from book title
         if book_idx >= 0 and book_idx < len(titles):
             book_title = titles[book_idx]
-            t_tag_value = None
-            if book_title_map:
-                canon_info = book_title_map.get(book_title.lower())
-                if canon_info:
-                    if isinstance(canon_info, dict):
-                        canon_long = canon_info.get("canonical-long", "")
-                        if canon_long:
-                            t_tag_value = normalize_nkbip08_tag_value(canon_long)
-                    else:
-                        t_tag_value = normalize_nkbip08_tag_value(str(canon_info))
-            if not t_tag_value:
-                t_tag_value = normalize_nkbip08_tag_value(book_title)
-            if t_tag_value:
-                s_tags.append(["T", t_tag_value])
+            # Add all three T tags (display, canonical-long, canonical-short)
+            _add_book_t_tags(s_tags, book_title, book_title_map)
         
         # c tag (chapter) - from chapter
         if chapter_idx >= 0 and chapter_idx < len(titles):
