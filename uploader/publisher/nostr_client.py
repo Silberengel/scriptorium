@@ -462,7 +462,12 @@ async def publish_events_ndjson(
             print(f"Errors: {errors[0] if errors else 'Unknown'}")
     
     # Verify first event was actually published
-    verification_result = {"verified": False, "error": None}
+    verification_result = {
+        "verified": False, 
+        "error": None,
+        "published_count": published_count,  # Include publish success info
+        "publish_succeeded": published_count > 0
+    }
     if first_event_d_tag and first_event_kind and published_count > 0:
         try:
             print(f"\nVerifying publication by querying relay for first event...")
@@ -471,7 +476,8 @@ async def publish_events_ndjson(
             await asyncio.sleep(2)
             
             try:
-                async with websockets.connect(relay_url) as ws:
+                # Use longer timeout for verification connection (relay might be busy after large publish)
+                async with websockets.connect(relay_url, open_timeout=30.0) as ws:
                     # Send REQ message: ["REQ", subscription_id, filters]
                     subscription_id = "verify"
                     filters = {
@@ -483,12 +489,12 @@ async def publish_events_ndjson(
                     
                     # Wait for events or EOSE
                     events_found = []
-                    timeout = 10.0
+                    timeout = 15.0  # Increased timeout for verification
                     start_time = time.time()
                     
                     while time.time() - start_time < timeout:
                         try:
-                            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                            response = await asyncio.wait_for(ws.recv(), timeout=3.0)
                             resp_data = json.loads(response)
                             
                             if resp_data[0] == "EVENT" and resp_data[1] == subscription_id:
@@ -514,9 +520,11 @@ async def publish_events_ndjson(
                         print(f"  ✓ Found event on relay")
                         
             except Exception as e:
+                # Verification failure is non-fatal - publish already succeeded
                 verification_result["error"] = f"Verification error: {e}"
                 import traceback
                 print(f"  Verification exception: {traceback.format_exc()}")
+                print(f"  ⚠ Note: Verification failed, but all {published_count} events were accepted by relay during publish.")
         except KeyboardInterrupt:
             print(f"\n⚠ Verification interrupted by user.")
             verification_result["error"] = "Verification interrupted by user"
