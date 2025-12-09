@@ -149,6 +149,15 @@ def _d_for(*parts: str) -> str:
     processed = []
     seen_words = set()
     
+    # Heuristics to identify book title segments (segments that likely contain book names)
+    # These keywords suggest a segment is a book title
+    book_title_keywords = {"gospel", "book", "epistle", "prophecy", "psalm", "proverb", "kings", "machabees", 
+                          "paralipomenon", "esdras", "corinthians", "thessalonians", "timothy", "titus", 
+                          "peter", "john", "jude", "revelation", "apocalypse", "acts", "romans", "hebrews"}
+    
+    # Track which processed segments are book titles (by index) - initialize before loop
+    book_title_indices = set()
+    
     for i, segment in enumerate(norm):
         # Check if this is a verse/section number pattern (e.g., "3-16", "3", "16")
         # If it matches the pattern for a section (has multiple numbers like "1-31"), add "s-" prefix
@@ -169,6 +178,11 @@ def _d_for(*parts: str) -> str:
             seen_words.add(abbrev_segment)
             continue
         
+        # Check if this segment looks like a book title
+        # If it contains book title keywords, preserve it more fully
+        segment_lower = segment.lower()
+        is_book_title = any(keyword in segment_lower for keyword in book_title_keywords)
+        
         # Check if segment contains "old-testament" or "new-testament" and replace
         # This handles cases where "old-testament" appears as part of a longer segment
         if "old-testament" in segment:
@@ -181,7 +195,7 @@ def _d_for(*parts: str) -> str:
         filtered_words = []
         
         # Process individual words
-        for word in words:
+        for word_idx, word in enumerate(words):
             # Apply abbreviations from segment_abbrev_map
             if word in segment_abbrev_map:
                 word = segment_abbrev_map[word]
@@ -192,6 +206,17 @@ def _d_for(*parts: str) -> str:
             elif word == "new":
                 word = "nt"
             
+            # For book titles: preserve all significant words (don't remove stop words or deduplicate)
+            # This ensures "mark" vs "matthew" are preserved
+            if is_book_title:
+                # Only skip very short stop words (1-2 chars) from book titles, keep everything else
+                if word in stop_words and len(word) <= 2:
+                    continue
+                filtered_words.append(word)
+                # Don't track words from book titles in seen_words to avoid deduplication
+                continue
+            
+            # For non-book-title segments: apply normal filtering
             # For middle segments, skip stop words (but keep them in first and last segments)
             if (i > 0 and i < len(norm) - 1) and word in stop_words:
                 continue
@@ -229,6 +254,9 @@ def _d_for(*parts: str) -> str:
             # Only add non-empty segments
             if processed_segment:
                 processed.append(processed_segment)
+                # Track if this is a book title segment
+                if is_book_title:
+                    book_title_indices.add(len(processed) - 1)
     
     # If processing removed everything, fall back to original
     if not processed:
@@ -251,27 +279,43 @@ def _d_for(*parts: str) -> str:
     
     # Pass 2: Remove segments that are prefixes of the next segment
     # e.g., "genesis" followed by "genesis-chapter-3" -> remove "genesis"
+    # BUT: Don't remove book title segments
     i = 0
     while i < len(processed) - 1:
         current = processed[i]
         next_seg = processed[i + 1]
         
+        # Don't remove book title segments
+        if i in book_title_indices or (i + 1) in book_title_indices:
+            i += 1
+            continue
+        
         # If current is a single word and next starts with it, remove current
         if len(current.split("-")) == 1 and next_seg.startswith(current + "-"):
             processed.pop(i)
+            # Adjust book_title_indices after removal
+            book_title_indices = {idx - 1 if idx > i else idx for idx in book_title_indices}
             continue
         
         # If next is a single word and current ends with it, remove next
         if len(next_seg.split("-")) == 1 and current.endswith("-" + next_seg):
             processed.pop(i + 1)
+            # Adjust book_title_indices after removal
+            book_title_indices = {idx - 1 if idx > i + 1 else idx for idx in book_title_indices}
             continue
         
         i += 1
     
     # Pass 3: Remove duplicate words at segment boundaries
     # e.g., "book-genesis" followed by "genesis-1-2" -> "book-genesis-1-2"
+    # BUT: Don't deduplicate words from book title segments
     i = 0
     while i < len(processed) - 1:
+        # Don't deduplicate if either segment is a book title
+        if i in book_title_indices or (i + 1) in book_title_indices:
+            i += 1
+            continue
+        
         current_words = processed[i].split("-")
         next_words = processed[i + 1].split("-")
         
@@ -290,6 +334,8 @@ def _d_for(*parts: str) -> str:
                 else:
                     # Next segment becomes empty, remove it
                     processed.pop(i + 1)
+                    # Adjust book_title_indices after removal
+                    book_title_indices = {idx - 1 if idx > i + 1 else idx for idx in book_title_indices}
                     continue
         
         i += 1

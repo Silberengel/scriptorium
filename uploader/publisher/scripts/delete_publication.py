@@ -217,109 +217,159 @@ def parse_a_tag(a_tag_value: str) -> Dict[str, str]:
     }
 
 
-async def fetch_all_events_recursive(
+async def fetch_all_events_breadth_first(
     relay_url: str,
     root_event: Dict[str, Any],
     collected: Set[str],
     errors: List[str],
-    progress_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Optional[Callable[[int], None]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Recursively fetch all events in a publication tree.
+    Fetch all events in a publication tree using breadth-first batching.
+    
+    This is much faster than recursive depth-first because it batches queries:
+    1. Start with root event
+    2. Collect all a-tags from current level
+    3. Batch query all those events at once
+    4. Repeat for next level
     
     Args:
         relay_url: Relay URL to query
         root_event: The root event to start from
         collected: Set of event IDs already collected (to avoid duplicates)
         errors: List to append errors to
+        progress_callback: Optional callback with current count (int)
     
     Returns:
         List of all events in the publication tree
     """
     all_events = []
+    
+    # Start with root event
     event_id = root_event.get("id")
-    pubkey = root_event.get("pubkey")
+    if event_id not in collected:
+        collected.add(event_id)
+        all_events.append(root_event)
+        if progress_callback:
+            progress_callback(len(collected))
     
-    if event_id in collected:
-        return all_events
+    # Current level of events to process
+    current_level = [root_event]
     
-    collected.add(event_id)
-    all_events.append(root_event)
-    
-    if progress_callback:
-        progress_callback(f"Fetched event {len(collected)}: {event_id[:16]}...")
-    
-    # Extract a-tags from root event
-    a_tags = []
-    for tag in root_event.get("tags", []):
-        if tag and len(tag) > 0 and tag[0] == "a":
-            a_value = tag[1] if len(tag) > 1 else ""
-            if a_value:
-                a_tags.append(a_value)
-    
-    # Also check for e-tags (event references)
-    e_tags = []
-    for tag in root_event.get("tags", []):
-        if tag and len(tag) > 0 and tag[0] == "e":
-            e_value = tag[1] if len(tag) > 1 else ""
-            if e_value:
-                e_tags.append(e_value)
-    
-    # Fetch child events via a-tags
-    for a_tag_value in a_tags:
-        try:
-            parsed = parse_a_tag(a_tag_value)
-            child_kind = parsed["kind"]
-            child_pubkey = parsed["pubkey"]
-            child_d_tag = parsed["d_tag"]
+    # Process level by level (breadth-first)
+    while current_level:
+        # Collect all a-tags and e-tags from current level
+        a_tags_to_fetch = {}  # Map a-tag value -> (kind, pubkey, d_tag)
+        e_tags_to_fetch = set()  # Set of event IDs
+        
+        for event in current_level:
+            pubkey = event.get("pubkey")
             
-            # Query for child event
+            # Extract a-tags
+            for tag in event.get("tags", []):
+                if tag and len(tag) > 0 and tag[0] == "a":
+                    a_value = tag[1] if len(tag) > 1 else ""
+                    if a_value and a_value not in a_tags_to_fetch:
+                        try:
+                            parsed = parse_a_tag(a_value)
+                            a_tags_to_fetch[a_value] = (
+                                parsed["kind"],
+                                parsed["pubkey"],
+                                parsed["d_tag"],
+                            )
+                        except Exception as e:
+                            errors.append(f"Error parsing a-tag {a_value}: {e}")
+            
+            # Extract e-tags
+            for tag in event.get("tags", []):
+                if tag and len(tag) > 0 and tag[0] == "e":
+                    e_value = tag[1] if len(tag) > 1 else ""
+                    if e_value and e_value not in collected:
+                        e_tags_to_fetch.add(e_value)
+        
+        # Batch fetch events by a-tags (group by pubkey and kind for efficient queries)
+        a_tag_groups = {}  # (pubkey, kind) -> list of d_tags
+        for a_value, (kind, pubkey, d_tag) in a_tags_to_fetch.items():
+            key = (pubkey, kind)
+            if key not in a_tag_groups:
+                a_tag_groups[key] = []
+            a_tag_groups[key].append((d_tag, a_value))
+        
+        # Fetch all a-tag events in batches
+        next_level = []
+        for (pubkey, kind), d_tag_list in a_tag_groups.items():
+            # Create filter for all d-tags of this kind/pubkey
+            d_tags = [d_tag for d_tag, _ in d_tag_list]
             filters = [{
-                "authors": [child_pubkey],
-                "kinds": [child_kind],
-                "#d": [child_d_tag],
+                "authors": [pubkey],
+                "kinds": [kind],
+                "#d": d_tags,
             }]
             
-            child_events = await query_events_from_relay(relay_url, child_pubkey, filters, timeout=30.0)
-            
-            if child_events:
-                # Take the latest event (highest created_at)
-                child_event = max(child_events, key=lambda e: e.get("created_at", 0))
+            try:
+                fetched_events = await query_events_from_relay(relay_url, pubkey, filters, timeout=60.0)
                 
-                # Recursively fetch children of this event
-                child_tree = await fetch_all_events_recursive(
-                    relay_url,
-                    child_event,
-                    collected,
-                    errors,
-                    progress_callback,
-                )
-                all_events.extend(child_tree)
-            else:
-                errors.append(f"Child event not found: {a_tag_value}")
-        except Exception as e:
-            errors.append(f"Error fetching child event {a_tag_value}: {e}")
-    
-    # Also fetch events referenced by e-tags
-    for e_tag_value in e_tags:
-        if e_tag_value in collected:
-            continue
+                # Map d-tags to events (take latest for each d-tag)
+                d_tag_to_event = {}
+                for event in fetched_events:
+                    # Find d-tag in event
+                    event_d_tag = None
+                    for tag in event.get("tags", []):
+                        if tag and len(tag) > 0 and tag[0] == "d":
+                            event_d_tag = tag[1] if len(tag) > 1 else ""
+                            break
+                    
+                    if event_d_tag and event_d_tag in d_tags:
+                        # Keep the latest event for this d-tag
+                        if event_d_tag not in d_tag_to_event:
+                            d_tag_to_event[event_d_tag] = event
+                        else:
+                            existing = d_tag_to_event[event_d_tag]
+                            if event.get("created_at", 0) > existing.get("created_at", 0):
+                                d_tag_to_event[event_d_tag] = event
+                
+                # Add fetched events to next level
+                for d_tag, a_value in d_tag_list:
+                    if d_tag in d_tag_to_event:
+                        event = d_tag_to_event[d_tag]
+                        event_id = event.get("id")
+                        if event_id not in collected:
+                            collected.add(event_id)
+                            all_events.append(event)
+                            next_level.append(event)
+                            if progress_callback:
+                                progress_callback(len(collected))
+                    else:
+                        errors.append(f"Child event not found: {a_value}")
+            except Exception as e:
+                errors.append(f"Error batch fetching events for {pubkey}/{kind}: {e}")
         
-        try:
-            child_event = await fetch_event_by_id(relay_url, e_tag_value, pubkey)
-            if child_event:
-                child_tree = await fetch_all_events_recursive(
-                    relay_url,
-                    child_event,
-                    collected,
-                    errors,
-                    progress_callback,
-                )
-                all_events.extend(child_tree)
-            else:
-                errors.append(f"Event not found by e-tag: {e_tag_value}")
-        except Exception as e:
-            errors.append(f"Error fetching event by e-tag {e_tag_value}: {e}")
+        # Fetch events by e-tags (batch by IDs)
+        if e_tags_to_fetch:
+            # Batch fetch by event IDs
+            event_ids = list(e_tags_to_fetch)
+            # Split into chunks to avoid too large queries
+            chunk_size = 100
+            for i in range(0, len(event_ids), chunk_size):
+                chunk = event_ids[i:i + chunk_size]
+                filters = [{"ids": chunk}]
+                
+                try:
+                    fetched_events = await query_events_from_relay(relay_url, root_event.get("pubkey", ""), filters, timeout=60.0)
+                    
+                    for event in fetched_events:
+                        event_id = event.get("id")
+                        if event_id not in collected:
+                            collected.add(event_id)
+                            all_events.append(event)
+                            next_level.append(event)
+                            if progress_callback:
+                                progress_callback(len(collected))
+                except Exception as e:
+                    errors.append(f"Error batch fetching events by IDs: {e}")
+        
+        # Move to next level
+        current_level = next_level
     
     return all_events
 
@@ -365,12 +415,12 @@ async def create_and_publish_deletions(
         
         deletion_events.append(deletion_event)
         
-        if pbar:
+        if pbar is not None:
             pbar.update(1)
         elif (idx + 1) % 100 == 0:
             print(f"Created {idx + 1}/{len(events_to_delete)} deletion events...")
     
-    if pbar:
+    if pbar is not None:
         pbar.close()
     
     # Publish deletion events
@@ -388,27 +438,35 @@ async def create_and_publish_deletions(
             else:
                 pbar = None
             
-            # Publish all deletion events
-            for idx, deletion_event in enumerate(deletion_events):
-                try:
-                    await ws.send(json.dumps(["EVENT", deletion_event]))
-                    published_count += 1
-                    
-                    if pbar:
-                        pbar.update(1)
-                    elif (idx + 1) % 100 == 0:
-                        print(f"Published {idx + 1}/{len(deletion_events)} deletion events...")
-                    
-                    # Small delay to avoid overwhelming relay
-                    if (idx + 1) % 50 == 0:
-                        await asyncio.sleep(0.1)
+            # Publish events in batches for better performance
+            # Send multiple events quickly, then pause briefly
+            batch_size = 100
+            for batch_start in range(0, len(deletion_events), batch_size):
+                batch_end = min(batch_start + batch_size, len(deletion_events))
+                batch = deletion_events[batch_start:batch_end]
+                
+                # Send all events in this batch without waiting
+                for idx, deletion_event in enumerate(batch):
+                    try:
+                        await ws.send(json.dumps(["EVENT", deletion_event]))
+                        published_count += 1
                         
-                except Exception as e:
-                    errors.append(f"Error publishing deletion event {idx}: {e}")
-                    if pbar:
-                        pbar.set_postfix_str(f"Errors: {len(errors)}")
+                        if pbar is not None:
+                            pbar.update(1)
+                    except Exception as e:
+                        errors.append(f"Error publishing deletion event {batch_start + idx}: {e}")
+                        if pbar is not None:
+                            pbar.set_postfix_str(f"Errors: {len(errors)}")
+                
+                # Progress update for non-tqdm mode
+                if pbar is None and batch_end % 500 == 0:
+                    print(f"Published {batch_end}/{len(deletion_events)} deletion events...")
+                
+                # Small delay between batches to avoid overwhelming relay
+                if batch_end < len(deletion_events):
+                    await asyncio.sleep(0.1)
             
-            if pbar:
+            if pbar is not None:
                 pbar.close()
             
             # Wait a bit for responses
@@ -446,7 +504,12 @@ Examples:
         "event_ref",
         help="Event reference: nevent, naddr, or 64-char hex event ID of the top-level 30040 event",
     )
-    parser.add_argument("relay_url", help="Relay URL (ws:// or wss://)")
+    parser.add_argument(
+        "relay_url",
+        nargs="?",
+        default=None,
+        help="Relay URL (ws:// or wss://). Defaults to wss://thecitadel.nostr1.com if not provided.",
+    )
     parser.add_argument(
         "--key",
         default=None,
@@ -460,6 +523,9 @@ Examples:
     if not secret_key:
         print("ERROR: Secret key required. Set SCRIPTORIUM_KEY env var or use --key")
         sys.exit(1)
+    
+    # Determine publish relay (for deletions) - prioritize user-provided, then default to thecitadel
+    publish_relay = args.relay_url or "wss://thecitadel.nostr1.com"
     
     # Parse event reference (nevent, naddr, or hex)
     print(f"Parsing event reference: {args.event_ref[:20]}...")
@@ -481,33 +547,32 @@ Examples:
         if relay_hint:
             print(f"Relay hint: {relay_hint}")
         
-        # Use relay hint if available, otherwise try thecitadel first, then provided relay
-        if relay_hint:
+        # Priority: 1) user-provided relay, 2) relay hint, 3) default (thecitadel)
+        if args.relay_url:
+            query_relay = args.relay_url
+        elif relay_hint:
             query_relay = relay_hint
         else:
-            # No relay hint - try thecitadel first
             query_relay = "wss://thecitadel.nostr1.com"
         
         # Fetch root event by naddr
         print(f"\nFetching root event from {query_relay}...")
         root_event = await fetch_event_by_naddr(query_relay, kind, pubkey, d_tag)
         
-        # If not found and we haven't tried the fallback relay, try it
+        # If not found, try fallback relays
         if not root_event:
-            if relay_hint:
-                # If we had a relay hint, try thecitadel as fallback
-                if query_relay != "wss://thecitadel.nostr1.com":
-                    print(f"Event not found on {query_relay}, trying fallback relay wss://thecitadel.nostr1.com...")
-                    root_event = await fetch_event_by_naddr("wss://thecitadel.nostr1.com", kind, pubkey, d_tag)
-                    if root_event:
-                        query_relay = "wss://thecitadel.nostr1.com"
-            else:
-                # If no relay hint, we tried thecitadel first, now try the provided relay
-                if args.relay_url != query_relay:
-                    print(f"Event not found on {query_relay}, trying {args.relay_url}...")
-                    root_event = await fetch_event_by_naddr(args.relay_url, kind, pubkey, d_tag)
-                    if root_event:
-                        query_relay = args.relay_url
+            fallback_relays = []
+            if args.relay_url and relay_hint and args.relay_url != relay_hint:
+                fallback_relays.append(relay_hint)
+            if "wss://thecitadel.nostr1.com" not in [query_relay] + fallback_relays:
+                fallback_relays.append("wss://thecitadel.nostr1.com")
+            
+            for fallback in fallback_relays:
+                print(f"Event not found on {query_relay}, trying fallback relay {fallback}...")
+                root_event = await fetch_event_by_naddr(fallback, kind, pubkey, d_tag)
+                if root_event:
+                    query_relay = fallback
+                    break
         
         author_hint = pubkey
     else:
@@ -522,33 +587,32 @@ Examples:
         if author_hint:
             print(f"Author hint: {author_hint[:16]}...")
         
-        # Use relay hint if available, otherwise try thecitadel first, then provided relay
-        if relay_hint:
+        # Priority: 1) user-provided relay, 2) relay hint, 3) default (thecitadel)
+        if args.relay_url:
+            query_relay = args.relay_url
+        elif relay_hint:
             query_relay = relay_hint
         else:
-            # No relay hint - try thecitadel first
             query_relay = "wss://thecitadel.nostr1.com"
         
         # Fetch root event by ID
         print(f"\nFetching root event from {query_relay}...")
         root_event = await fetch_event_by_id(query_relay, event_id, author_hint)
         
-        # If not found and we haven't tried the fallback relay, try it
+        # If not found, try fallback relays
         if not root_event:
-            if relay_hint:
-                # If we had a relay hint, try thecitadel as fallback
-                if query_relay != "wss://thecitadel.nostr1.com":
-                    print(f"Event not found on {query_relay}, trying fallback relay wss://thecitadel.nostr1.com...")
-                    root_event = await fetch_event_by_id("wss://thecitadel.nostr1.com", event_id, author_hint)
-                    if root_event:
-                        query_relay = "wss://thecitadel.nostr1.com"
-            else:
-                # If no relay hint, we tried thecitadel first, now try the provided relay
-                if args.relay_url != query_relay:
-                    print(f"Event not found on {query_relay}, trying {args.relay_url}...")
-                    root_event = await fetch_event_by_id(args.relay_url, event_id, author_hint)
-                    if root_event:
-                        query_relay = args.relay_url
+            fallback_relays = []
+            if args.relay_url and relay_hint and args.relay_url != relay_hint:
+                fallback_relays.append(relay_hint)
+            if "wss://thecitadel.nostr1.com" not in [query_relay] + fallback_relays:
+                fallback_relays.append("wss://thecitadel.nostr1.com")
+            
+            for fallback in fallback_relays:
+                print(f"Event not found on {query_relay}, trying fallback relay {fallback}...")
+                root_event = await fetch_event_by_id(fallback, event_id, author_hint)
+                if root_event:
+                    query_relay = fallback
+                    break
     
     if not root_event:
         print(f"ERROR: Root event not found on any relay")
@@ -558,21 +622,45 @@ Examples:
     
     # Recursively fetch all events
     print(f"\nFetching all child events recursively...")
+    print("This may take a while for large publications...")
     collected = set()
     errors = []
     
-    # Progress callback for fetching
-    def progress_callback(msg: str):
-        if not HAS_TQDM:
-            print(f"  {msg}")
+    # Progress tracking
+    last_progress_print = 0
     
-    all_events = await fetch_all_events_recursive(
-        query_relay,
-        root_event,
-        collected,
-        errors,
-        progress_callback,
-    )
+    # Progress callback for fetching
+    if HAS_TQDM and sys.stdout.isatty():
+        pbar = tqdm(desc="Fetching events", unit="events", dynamic_ncols=True, total=None)
+        
+        def progress_callback(count: int):
+            if pbar is not None:
+                pbar.update(1)
+                pbar.set_postfix_str(f"Total: {count}")
+    else:
+        pbar = None
+        
+        def progress_callback(count: int):
+            nonlocal last_progress_print
+            # Print every 100 events or every 5 seconds
+            current_time = time.time()
+            if count % 100 == 0 or (current_time - last_progress_print) >= 5.0:
+                print(f"  Fetched {count} events...", end='\r')
+                last_progress_print = current_time
+    
+    try:
+        all_events = await fetch_all_events_breadth_first(
+            query_relay,
+            root_event,
+            collected,
+            errors,
+            progress_callback,
+        )
+    finally:
+        if pbar is not None:
+            pbar.close()
+        if pbar is None:
+            print()  # New line after progress updates
     
     print(f"✓ Collected {len(all_events)} events to delete")
     if errors:
@@ -583,7 +671,7 @@ Examples:
             print(f"  ... and {len(errors) - 10} more")
     
     # Confirm deletion
-    print(f"\n⚠ WARNING: About to delete {len(all_events)} events from {args.relay_url}")
+    print(f"\n⚠ WARNING: About to delete {len(all_events)} events from {publish_relay}")
     response = input("Type 'DELETE' to confirm: ")
     if response != "DELETE":
         print("Cancelled.")
@@ -592,7 +680,7 @@ Examples:
     # Create and publish deletion events
     print(f"\nCreating deletion events for {len(all_events)} events...")
     result = await create_and_publish_deletions(
-        args.relay_url,
+        publish_relay,
         secret_key,
         all_events,
     )
