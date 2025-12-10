@@ -1,7 +1,3 @@
-:doctype: article
-
-:lang: en
-
 = Jane Eyre, an Autobiography
 
 == Preface
@@ -64,11 +60,8 @@ Folds of scarlet drapery shut in my view to the right hand; to the left were the
 I returned to my book—Bewick’s History of British Birds: the letterpress thereof I cared little for, generally speaking; and yet there were certain introductory pages that, child as I was, I could not pass quite as a blank. They were those which treat of the haunts of sea-fowl; of “the solitary rocks and promontories” by them only inhabited; of the coast of Norway, studded with isles from its southern extremity, the Lindeness, or Naze, to the North Cape—
 
 “Where the Northern Ocean, in vast whirls,
-
 Boils round the naked, melancholy isles
-
 Of farthest Thule; and the Atlantic surge
-
 Pours in among the stormy Hebrides.”
 
 Nor could I pass unnoticed the suggestion of the bleak shores of Lapland, Siberia, Spitzbergen, Nova Zembla, Iceland, Greenland, with “the vast sweep of the Arctic Zone, and those forlorn regions of dreary space,—that reservoir of frost and snow, where firm fields of ice, the accumulation of centuries of winters, glazed in Alpine heights above heights, surround the pole, and concentre the multiplied rigours of extreme cold.” Of these death-white realms I formed an idea of my own: shadowy, like all the half-comprehended notions that float dim through children’s brains, but strangely impressive. The words in these introductory pages connected themselves with the succeeding vignettes, and gave significance to the rock standing up alone in a sea of billow and spray; to the broken boat stranded on a desolate coast; to the cold and ghastly moon glancing through bars of cloud at a wreck just sinking.
@@ -272,50 +265,34 @@ Bessie had been down into the kitchen, and she brought up with her a tart on a c
 Bessie had now finished dusting and tidying the room, and having washed her hands, she opened a certain little drawer, full of splendid shreds of silk and satin, and began making a new bonnet for Georgiana’s doll. Meantime she sang: her song was—
 
 “In the days when we went gipsying,
-
- A long time ago.”
+    A long time ago.”
 
 I had often heard the song before, and always with lively delight; for Bessie had a sweet voice,—at least, I thought so. But now, though her voice was still sweet, I found in its melody an indescribable sadness. Sometimes, preoccupied with her work, she sang the refrain very low, very lingeringly; “A long time ago” came out like the saddest cadence of a funeral hymn. She passed into another ballad, this time a really doleful one.
 
 “My feet they are sore, and my limbs they are weary;
-
- Long is the way, and the mountains are wild;
-
+    Long is the way, and the mountains are wild;
 Soon will the twilight close moonless and dreary
-
- Over the path of the poor orphan child.
+    Over the path of the poor orphan child.
 
 Why did they send me so far and so lonely,
-
- Up where the moors spread and grey rocks are piled?
-
+    Up where the moors spread and grey rocks are piled?
 Men are hard-hearted, and kind angels only
-
- Watch o’er the steps of a poor orphan child.
+    Watch o’er the steps of a poor orphan child.
 
 Yet distant and soft the night breeze is blowing,
-
- Clouds there are none, and clear stars beam mild,
-
+    Clouds there are none, and clear stars beam mild,
 God, in His mercy, protection is showing,
-
- Comfort and hope to the poor orphan child.
+    Comfort and hope to the poor orphan child.
 
 Ev’n should I fall o’er the broken bridge passing,
-
- Or stray in the marshes, by false lights beguiled,
-
+    Or stray in the marshes, by false lights beguiled,
 Still will my Father, with promise and blessing,
-
- Take to His bosom the poor orphan child.
+    Take to His bosom the poor orphan child.
 
 There is a thought that for strength should avail me,
-
- Though both of shelter and kindred despoiled;
-
+    Though both of shelter and kindred despoiled;
 Heaven is a home, and a rest will not fail me;
-
- God is a friend to the poor orphan child.”
+    God is a friend to the poor orphan child.”
 
 “Come, Miss Jane, don’t cry,” said Bessie as she finished. She might as well have said to the fire, “don’t burn!” but how could she divine the morbid suffering to which I was a prey? In the course of the morning Mr. Lloyd came again.
 
@@ -605,7 +582,6 @@ That eye of hers, that voice stirred every antipathy I had. Shaking from head to
 “How dare I, Mrs. Reed? How dare I? Because it is the truth. You think I have no feelings, and that I can do without one bit of love or kindness; but I cannot live so: and you have no pity. I shall remember how you thrust me back—roughly and violently thrust me back—into the red-room, and locked me up there, to my dying day; though I was in agony; though I cried out, while suffocating with distress, ‘Have mercy! Have mercy, Aunt Reed!’ And that punishment you made me suffer because your wicked boy struck me—knocked me down for nothing. I will tell anybody who asks me questions, this exact tale. People think you a good woman, but you are bad, hard-hearted. You are deceitful!”
 
 How dare I, Mrs. Reed? How dare I? Because it is the truth
-
 Ere I had finished this reply, my soul began to expand, to exult, with the strangest sense of freedom, of triumph, I ever felt. It seemed as if an invisible bond had burst, and that I had struggled out into unhoped-for liberty. Not without cause was this sentiment: Mrs. Reed looked frightened; her work had slipped from her knee; she was lifting up her hands, rocking herself to and fro, and even twisting her face as if she would cry.
 
 “Jane, you are under a mistake: what is the matter with you? Why do you tremble so violently? Would you like to drink some water?”
@@ -816,7 +792,6 @@ As yet I had spoken to no one, nor did anybody seem to take notice of me; I stoo
 LOWOOD INSTITUTION.
 
 This portion was rebuilt A.D. ——, by Naomi Brocklehurst,
-
 of Brocklehurst Hall, in this county.
 
 “Let your light so shine before men, that they may see your good works, and glorify your Father which is in heaven.”—St. Matt. v. 16.
@@ -1929,7 +1904,6 @@ He looked at me when I said this; he had hardly turned his eyes in my direction 
 I should have been afraid to touch a horse when alone, but when told to do it, I was disposed to obey. I put down my muff on the stile, and went up to the tall steed; I endeavoured to catch the bridle, but it was a spirited thing, and would not let me come near its head; I made effort on effort, though in vain: meantime, I was mortally afraid of its trampling fore-feet. The traveller waited and watched for some time, and at last he laughed.
 
 I was mortally afraid of its trampling forefeet
-
 “I see,” he said, “the mountain will never be brought to Mahomet, so all you can do is to aid Mahomet to go to the mountain; I must beg of you to come here.”
 
 I came. “Excuse me,” he continued: “necessity compels me to make you useful.” He laid a heavy hand on my shoulder, and leaning on me with some stress, limped to his horse. Having once caught the bridle, he mastered it directly and sprang to his saddle; grimacing grimly as he made the effort, for it wrenched his sprain.
@@ -1943,8 +1917,7 @@ I sought it and found it.
 A touch of a spurred heel made his horse first start and rear, and then bound away; the dog rushed in his traces; all three vanished,
 
 “Like heath that, in the wilderness,
-
- The wild wind whirls away.”
+    The wild wind whirls away.”
 
 I took up my muff and walked on. The incident had occurred and was gone for me: it was an incident of no moment, no romance, no interest in a sense; yet it marked with change one single hour of a monotonous life. My help had been needed and claimed; I had given it: I was pleased to have done something; trivial, transitory though the deed was, it was yet an active thing, and I was weary of an existence all passive. The new face, too, was like a new picture introduced to the gallery of memory; and it was dissimilar to all the others hanging there: firstly, because it was masculine; and, secondly, because it was dark, strong, and stern. I had it still before me when I entered Hay, and slipped the letter into the post-office; I saw it as I walked fast down-hill all the way home. When I came to the stile, I stopped a minute, looked round and listened, with an idea that a horse’s hoofs might ring on the causeway again, and that a rider in a cloak, and a Gytrash-like Newfoundland dog, might be again apparent: I saw only the hedge and a pollard willow before me, rising up still and straight to meet the moonbeams; I heard only the faintest waft of wind roaming fitful among the trees round Thornfield, a mile distant; and when I glanced down in the direction of the murmur, my eye, traversing the hall-front, caught a light kindling in a window: it reminded me that I was late, and I hurried on.
 
@@ -2560,7 +2533,6 @@ I did run; I brought the candle which still remained in the gallery. He took it 
 I briefly related to him what had transpired: the strange laugh I had heard in the gallery: the step ascending to the third storey; the smoke,—the smell of fire which had conducted me to his room; in what state I had found matters there, and how I had deluged him with all the water I could lay hands on.
 
 “What is it and who did it?” he asked
-
 He listened very gravely; his face, as I went on, expressed more concern than astonishment; he did not immediately speak when I had concluded.
 
 “Shall I call Mrs. Fairfax?” I asked.
@@ -3279,7 +3251,6 @@ Would she laugh? Would she take it as a joke? All eyes met her with a glance of 
 Miss Ingram took a book, leant back in her chair, and so declined further conversation. I watched her for nearly half-an-hour: during all that time she never turned a page, and her face grew momently darker, more dissatisfied, and more sourly expressive of disappointment. She had obviously not heard anything to her advantage: and it seemed to me, from her prolonged fit of gloom and taciturnity, that she herself, notwithstanding her professed indifference, attached undue importance to whatever revelations had been made her.
 
 During all that time she never turned a page
-
 Meantime, Mary Ingram, Amy and Louisa Eshton, declared they dared not go alone; and yet they all wished to go. A negotiation was opened through the medium of the ambassador, Sam; and after much pacing to and fro, till, I think, the said Sam’s calves must have ached with the exercise, permission was at last, with great difficulty, extorted from the rigorous Sibyl, for the three to wait upon her in a body.
 
 Their visit was not so still as Miss Ingram’s had been: we heard hysterical giggling and little shrieks proceeding from the library; and at the end of about twenty minutes they burst the door open, and came running across the hall, as if they were half-scared out of their wits.
@@ -3458,7 +3429,6 @@ I said nothing.
 “Don’t keep me long; the fire scorches me.”
 
 She did not stoop towards me, but only gazed, leaning back in her chair
-
 I knelt. She did not stoop towards me, but only gazed, leaning back in her chair. She began muttering,—
 
 “The flame flickers in the eye; the eye shines like dew; it looks soft and full of feeling; it smiles at my jargon: it is susceptible; impression follows impression through its clear sphere; where it ceases to smile, it is sad; an unconscious lassitude weighs on the lid: that signifies melancholy resulting from loneliness. It turns from me; it will not suffer further scrutiny; it seems to deny, by a mocking glance, the truth of the discoveries I have already made,—to disown the charge both of sensibility and chagrin: its pride and reserve only confirm me in my opinion. The eye is favourable.
@@ -4290,11 +4260,9 @@ I obeyed her directions. “Read the letter,” she said.
 It was short, and thus conceived:—
 
 “MADAM,—
-
 “Will you have the goodness to send me the address of my niece, Jane Eyre, and to tell me how she is? It is my intention to write shortly and desire her to come to me at Madeira. Providence has blessed my endeavours to secure a competency; and as I am unmarried and childless, I wish to adopt her during my life, and bequeath her at my death whatever I may have to leave.
 
 I am, Madam, &c., &c.,
-
 “JOHN EYRE, Madeira.”
 
 It was dated three years back.
@@ -4959,99 +4927,63 @@ He duly summoned me to his presence in the evening. I had prepared an occupation
 I did try, but was presently swept off the stool and denominated “a little bungler.” Being pushed unceremoniously to one side—which was precisely what I wished—he usurped my place, and proceeded to accompany himself: for he could play as well as sing. I hied me to the window-recess. And while I sat there and looked out on the still trees and dim lawn, to a sweet air was sung in mellow tones the following strain:—
 
 “The truest love that ever heart
-
 Felt at its kindled core,
-
 Did through each vein, in quickened start,
-
 The tide of being pour.
 
 Her coming was my hope each day,
-
 Her parting was my pain;
-
 The chance that did her steps delay
-
 Was ice in every vein.
 
 I dreamed it would be nameless bliss,
-
 As I loved, loved to be;
-
 And to this object did I press
-
 As blind as eagerly.
 
 But wide as pathless was the space
-
 That lay our lives between,
-
 And dangerous as the foamy race
-
 Of ocean-surges green.
 
 And haunted as a robber-path
-
 Through wilderness or wood;
-
 For Might and Right, and Woe and Wrath,
-
 Between our spirits stood.
 
 I dangers dared; I hindrance scorned;
-
 I omens did defy:
-
 Whatever menaced, harassed, warned,
-
 I passed impetuous by.
 
 On sped my rainbow, fast as light;
-
 I flew as in a dream;
-
 For glorious rose upon my sight
-
 That child of Shower and Gleam.
 
 Still bright on clouds of suffering dim
-
 Shines that soft, solemn joy;
-
 Nor care I now, how dense and grim
-
 Disasters gather nigh.
 
 I care not in this moment sweet,
-
 Though all I have rushed o’er
-
 Should come on pinion, strong and fleet,
-
 Proclaiming vengeance sore:
 
 Though haughty Hate should strike me down,
-
 Right, bar approach to me,
-
 And grinding Might, with furious frown,
-
 Swear endless enmity.
 
 My love has placed her little hand
-
 With noble faith in mine,
-
 And vowed that wedlock’s sacred band
-
 Our nature shall entwine.
 
 My love has sworn, with sealing kiss,
-
 With me to live—to die;
-
 I have at last my nameless bliss.
-
 As I love—loved am I!”
 
 He rose and came towards me, and I saw his face all kindled, and his full falcon-eye flashing, and tenderness and passion in every lineament. I quailed momentarily—then I rallied. Soft scene, daring demonstration, I would not have; and I stood in peril of both: a weapon of defence must be prepared—I whetted my tongue: as he reached me, I asked with asperity, “whom he was going to marry now?”
@@ -5254,7 +5186,6 @@ The disquietude of his air, the somewhat apprehensive impatience of his manner, 
 “Sir, it removed my veil from its gaunt head, rent it in two parts, and flinging both on the floor, trampled on them.”
 
 It removed my veil from its gaunt head, rent it in two parts, and flinging both on the floor, trampled on them
-
 “Afterwards?”
 
 “It drew aside the window-curtain and looked out; perhaps it saw dawn approaching, for, taking the candle, it retreated to the door. Just at my bedside, the figure stopped: the fiery eyes glared upon me—she thrust up her candle close to my face, and extinguished it under my eyes. I was aware her lurid visage flamed over mine, and I lost consciousness: for the second time in my life—only the second time—I became insensible from terror.”
@@ -5833,7 +5764,6 @@ What was I to do? Where to go? Oh, intolerable questions, when I could do nothin
 I touched the heath: it was dry, and yet warm with the heat of the summer day. I looked at the sky; it was pure: a kindly star twinkled just above the chasm ridge. The dew fell, but with propitious softness; no breeze whispered. Nature seemed to me benign and good; I thought she loved me, outcast as I was; and I, who from man could anticipate only mistrust, rejection, insult, clung to her with filial fondness. To-night, at least, I would be her guest, as I was her child: my mother would lodge me without money and without price. I had one morsel of bread yet: the remnant of a roll I had bought in a town we passed through at noon with a stray penny—my last coin. I saw ripe bilberries gleaming here and there, like jet beads in the heath: I gathered a handful and ate them with the bread. My hunger, sharp before, was, if not satisfied, appeased by this hermit’s meal. I said my evening prayers at its conclusion, and then chose my couch.
 
 I said my evening prayers
-
 Beside the crag the heath was very deep: when I lay down my feet were buried in it; rising high on each side, it left only a narrow space for the night-air to invade. I folded my shawl double, and spread it over me for a coverlet; a low, mossy swell was my pillow. Thus lodged, I was not, at least at the commencement of the night, cold.
 
 My rest might have been blissful enough, only a sad heart broke it. It plained of its gaping wounds, its inward bleeding, its riven chords. It trembled for Mr. Rochester and his doom; it bemoaned him with bitter pity; it demanded him with ceaseless longing; and, impotent as a bird with both wings broken, it still quivered its shattered pinions in vain attempts to seek him.
@@ -5923,7 +5853,6 @@ A little before dark I passed a farm-house, at the open door of which the farmer
 I could not hope to get a lodging under a roof, and sought it in the wood I have before alluded to. But my night was wretched, my rest broken: the ground was damp, the air cold: besides, intruders passed near me more than once, and I had again and again to change my quarters: no sense of safety or tranquillity befriended me. Towards morning it rained; the whole of the following day was wet. Do not ask me, reader, to give a minute account of that day; as before, I sought work; as before, I was repulsed; as before, I starved; but once did food pass my lips. At the door of a cottage I saw a little girl about to throw a mess of cold porridge into a pig trough. “Will you give me that?” I asked.
 
 “Will you give me that?” I asked
-
 She stared at me. “Mother!” she exclaimed, “there is a woman wants me to give her these porridge.”
 
 “Well lass,” replied a voice within, “give it her if she’s a beggar. T’ pig doesn’t want it.”
@@ -6055,7 +5984,6 @@ These words I not only thought, but uttered; and thrusting back all my misery in
 “Hush, Hannah! I have a word to say to the woman. You have done your duty in excluding, now let me do mine in admitting her. I was near, and listened to both you and her. I think this is a peculiar case—I must at least examine into it. Young woman, rise, and pass before me into the house.”
 
 Hush, Hannah; I have a word to say to the woman
-
 With difficulty I obeyed him. Presently I stood within that clean, bright kitchen—on the very hearth—trembling, sickening; conscious of an aspect in the last degree ghastly, wild, and weather-beaten. The two ladies, their brother, Mr. St. John, the old servant, were all gazing at me.
 
 “St. John, who is it?” I heard one ask.
@@ -6758,16 +6686,11 @@ I, in my turn, scrutinised the paper; but saw nothing on it save a few dingy sta
 When Mr. St. John went, it was beginning to snow; the whirling storm continued all night. The next day a keen wind brought fresh and blinding falls; by twilight the valley was drifted up and almost impassable. I had closed my shutter, laid a mat to the door to prevent the snow from blowing in under it, trimmed my fire, and after sitting nearly an hour on the hearth listening to the muffled fury of the tempest, I lit a candle, took down “Marmion,” and beginning—
 
 “Day set on Norham’s castled steep,
-
 And Tweed’s fair river broad and deep,
-
- And Cheviot’s mountains lone;
-
+    And Cheviot’s mountains lone;
 The massive towers, the donjon keep,
-
 The flanking walls that round them sweep,
-
- In yellow lustre shone”—
+    In yellow lustre shone”—
 
 I soon forgot storm in music.
 
@@ -6950,7 +6873,6 @@ Of course these objections wrought my eagerness to a climax: gratified it must b
 “And I am a hard woman,—impossible to put off.”
 
 And I am a hard woman,—impossible to put off
-
 “And then,” he pursued, “I am cold: no fervour infects me.”
 
 “Whereas I am hot, and fire dissolves ice. The blaze there has thawed all the snow from your cloak; by the same token, it has streamed on to my floor, and made it like a trampled street. As you hope ever to be forgiven, Mr. Rivers, the high crime and misdemeanour of spoiling a sanded kitchen, tell me what I wish to know.”
@@ -7281,7 +7203,6 @@ My iron shroud contracted round me; persuasion advanced with slow sure step. Shu
 “Very willingly,” he rejoined; and rising, he strode a little distance up the pass, threw himself down on a swell of heath, and there lay still.
 
 He threw himself down on a swell of heath, and there lay still
-
 “I can do what he wants me to do: I am forced to see and acknowledge that,” I meditated,—“that is, if life be spared me. But I feel mine is not the existence to be long protracted under an Indian sun. What then? He does not care for that: when my time came to die, he would resign me, in all serenity and sanctity, to the God who gave me. The case is very plain before me. In leaving England, I should leave a loved but empty land—Mr. Rochester is not there; and if he were, what is, what can that ever be to me? My business is to live without him now: nothing so absurd, so weak as to drag on from day to day, as if I were waiting some impossible change in circumstances, which might reunite me to him. Of course (as St. John once said) I must seek another interest in life to replace the one lost: is not the occupation he now offers me truly the most glorious man can adopt or God assign? Is it not, by its noble cares and sublime results, the one best calculated to fill the void left by uptorn affections and demolished hopes? I believe I must say, Yes—and yet I shudder. Alas! If I join St. John, I abandon half myself: if I go to India, I go to premature death. And how will the interval between leaving England for India, and India for the grave, be filled? Oh, I know well! That, too, is very clear to my vision. By straining to satisfy St. John till my sinews ache, I shall satisfy him—to the finest central point and farthest outward circle of his expectations. If I do go with him—if I do make the sacrifice he urges, I will make it absolutely: I will throw all on the altar—heart, vitals, the entire victim. He will never love me; but he shall approve me; I will show him energies he has not yet seen, resources he has never suspected. Yes, I can work as hard as he can, and with as little grudging.
 
 “Consent, then, to his demand is possible: but for one item—one dreadful item. It is—that he asks me to be his wife, and has no more of a husband’s heart for me than that frowning giant of a rock, down which the stream is foaming in yonder gorge. He prizes me as a soldier would a good weapon; and that is all. Unmarried to him, this would never grieve me; but can I let him complete his calculations—coolly put into practice his plans—go through the wedding ceremony? Can I receive from him the bridal ring, endure all the forms of love (which I doubt not he would scrupulously observe) and know that the spirit was quite absent? Can I bear the consciousness that every endearment he bestows is a sacrifice made on principle? No: such a martyrdom would be monstrous. I will never undergo it. As his sister, I might accompany him—not as his wife: I will tell him so.”
@@ -7679,7 +7600,6 @@ I feared now to hear my own story. I endeavoured to recall him to the main fact.
 “Yes, indeed was he; and he went up to the attics when all was burning above and below, and got the servants out of their beds and helped them down himself, and went back to get his mad wife out of her cell. And then they called out to him that she was on the roof, where she was standing, waving her arms, above the battlements, and shouting out till they could hear her a mile off: I saw her and heard her with my own eyes. She was a big woman, and had long black hair: we could see it streaming against the flames as she stood. I witnessed, and several more witnessed, Mr. Rochester ascend through the sky-light on to the roof; we heard him call ‘Bertha!’ We saw him approach her; and then, ma’am, she yelled and gave a spring, and the next minute she lay smashed on the pavement.”
 
 The next minute she lay smashed on the pavement
-
 “Dead?”
 
 “Dead! Ay, dead as the stones on which her brains and blood were scattered.”
@@ -7910,7 +7830,6 @@ After supper, he began to ask me many questions, of where I had been, what I had
 “You are altogether a human being, Jane? You are certain of that?”
 
 You are altogether a human being, Jane? You are certain of that?
-
 “I conscientiously believe so, Mr. Rochester.”
 
 “Yet how, on this dark and doleful evening, could you so suddenly rise on my lone hearth? I stretched my hand to take a glass of water from a hireling, and it was given me by you: I asked a question, expecting John’s wife to answer me, and your voice spoke at my ear.”
@@ -8295,7 +8214,6 @@ I had a gold watch-chain: I answered “Yes.”
 “And have you a pale blue dress on?”
 
 And have you a pale blue dress on?
-
 I had. He informed me then, that for some time he had fancied the obscurity clouding one eye was becoming less dense; and that now he was sure of it.
 
 He and I went up to London. He had the advice of an eminent oculist; and he eventually recovered the sight of that one eye. He cannot now see very distinctly: he cannot read or write much; but he can find his way without being led by the hand: the sky is no longer a blank to him—the earth no longer a void. When his first-born was put into his arms, he could see that the boy had inherited his own eyes, as they once were—large, brilliant, and black. On that occasion, he again, with a full heart, acknowledged that God had tempered judgment with mercy.

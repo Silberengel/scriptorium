@@ -5,14 +5,13 @@ from pathlib import Path
 from .config import load_config
 from .io_layout import Layout
 from .adapters.html_to_adoc import html_to_adoc
-from .adapters.adoc_identity import normalize_adoc
 from .metadata_wizard import draft_metadata_from_document, write_metadata_yaml
 from .parse_collection import parse_adoc_structure
 from .nkbip_bookstr import serialize_bookstr
 import asyncio
 import json
 from .metadata import load_metadata, load_title_mapping
-from .util import to_ascii_text, strip_invisible_text, unwrap_hard_wraps, ensure_blank_before_headings, ensure_blank_before_attributes, remove_discrete_attributes, ensure_blank_between_paragraphs
+from .util import to_ascii_text, strip_invisible_text, unwrap_hard_wraps, ensure_blank_before_headings, ensure_blank_before_attributes, remove_discrete_attributes, ensure_blank_between_paragraphs, normalize_ambiguous_unicode, normalize_headings
 from .text_structure import promote_headings
 
 
@@ -65,7 +64,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     if cfg.source_type == "HTML":
         adoc = html_to_adoc(src.read_bytes())
     elif cfg.source_type == "ADOC":
-        adoc = normalize_adoc(src.read_text(encoding="utf-8"))
+        adoc = src.read_text(encoding="utf-8").lstrip()
     else:
         print(f"Unsupported source type for generate: {cfg.source_type}", file=sys.stderr)
         return 2
@@ -91,6 +90,10 @@ def _cmd_generate(args: argparse.Namespace) -> int:
             verse_level=verse_level,
             insert_preamble=not getattr(args, "no_preamble", False),
         )
+    # Normalize ambiguous unicode characters (always, before other processing)
+    adoc = normalize_ambiguous_unicode(adoc)
+    # Normalize heading format to ensure valid AsciiDoc
+    adoc = normalize_headings(adoc)
     # Additional sanitation options
     if hasattr(args, "ascii_only") and args.ascii_only:
         adoc = to_ascii_text(adoc)
