@@ -1,0 +1,26 @@
+title: Jane Eyre
+author: Charlotte Brontë
+language: en
+collection_id: ''
+has_collection: false
+has_verses: false
+use_bookstr: true
+book_title_mapping_file: null
+published_on: 1847
+published_by: Public Domain
+summary: A novel by Charlotte Brontë about a young woman who is orphaned and sent to live with her aunt and cousins at Lowood, and is then sent to a school for girls. She then finds love with a man who is not what he seems.
+type: book
+auto_update: ask
+source: https://www.gutenberg.org/files/1260/1260-h/1260-h.htm
+image: https://upload.wikimedia.org/wikipedia/commons/5/5f/Jane_Eyre.jpg
+version: '3rd edition'
+derivative_author: null
+derivative_event: null
+derivative_relay: null
+derivative_pubkey: null
+additional_tags: null
+levels:
+  book: Book
+  chapter: Chapter
+wikistr_mappings: []
+book_metadata: []

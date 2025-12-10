@@ -83,16 +83,27 @@ def cmd_generate(args) -> int:
     adoc = ensure_blank_between_paragraphs(adoc)
     # store a single normalized AsciiDoc as proof of pipeline
     out_file = layout.adoc_dir / "normalized-publication.adoc"
+    # Debug: verify content before write
+    lines_before_write = len(adoc.splitlines())
+    newlines_before_write = adoc.count("\n")
     out_file.write_text(adoc, encoding="utf-8")
-    print(f"Generated AsciiDoc: {out_file}")
+    # Debug: verify content after write
+    read_back = out_file.read_text(encoding="utf-8")
+    lines_after_write = len(read_back.splitlines())
+    newlines_after_write = read_back.count("\n")
+    if lines_before_write != lines_after_write or newlines_before_write != newlines_after_write:
+        print(f"⚠ WARNING: Newlines lost during write! Before: {lines_before_write} lines ({newlines_before_write} newlines), After: {lines_after_write} lines ({newlines_after_write} newlines)", file=sys.stderr)
+    print(f"Generated AsciiDoc: {out_file} ({lines_after_write} lines)")
     # Load metadata if present
     base_dir = Path(args.input).parent
     md = load_metadata(base_dir)
     has_collection = bool(args.has_collection) if hasattr(args, "has_collection") and args.has_collection else (md.has_collection if md else True)
+    has_verses = md.has_verses if md else True
     language = (md.language if md and md.language else "en")
-    collection_id = md.collection_id if md and md.collection_id else base_dir.name
+    # Respect explicitly empty collection_id from metadata (don't fall back to base_dir.name)
+    collection_id = md.collection_id if md else base_dir.name
     # Parse collection structure
-    tree = parse_adoc_structure(adoc, has_collection=has_collection)
+    tree = parse_adoc_structure(adoc, has_collection=has_collection, has_verses=has_verses)
     # Serialize bookstr events
     title_map = load_title_mapping(base_dir, md)
     use_bookstr = md.use_bookstr if md else True
@@ -103,6 +114,7 @@ def cmd_generate(args) -> int:
         use_bookstr=use_bookstr,
         book_title_map=title_map,
         metadata=md,
+        has_verses=has_verses,
     )
     # Write events to NDJSON
     events_path = layout.events_dir / "events.ndjson"

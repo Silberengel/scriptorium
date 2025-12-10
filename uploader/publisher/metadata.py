@@ -13,6 +13,7 @@ class Metadata:
     language: str = "en"
     collection_id: str = ""
     has_collection: bool = True
+    has_verses: bool = True  # If False, treat all content as sections (chapters) rather than verses
     use_bookstr: bool = True
     book_title_mapping_file: Optional[str] = None
     wikistr_mappings: List[Dict[str, str]] = field(default_factory=list)
@@ -42,12 +43,19 @@ def load_metadata(base_dir: Path) -> Optional[Metadata]:
 
     # Support both "year" (legacy) and "published_on" (NKBIP-01)
     published_on_val = _get("published_on") or _get("year")
+    # For collection_id, check if it's explicitly set (even if empty), otherwise use base_dir.name
+    collection_id_val = data.get("collection_id")
+    if collection_id_val is None:
+        collection_id_val = base_dir.name
+    else:
+        collection_id_val = str(collection_id_val)
     return Metadata(
         title=str(_get("title", "")),
         author=str(_get("author", "")),
         language=str(_get("language", "en")),
-        collection_id=str(_get("collection_id", base_dir.name)),
+        collection_id=collection_id_val,
         has_collection=bool(_get("has_collection", True)),
+        has_verses=bool(_get("has_verses", True)),
         use_bookstr=bool(_get("use_bookstr", True)),
         book_title_mapping_file=_get("book_title_mapping_file"),
         wikistr_mappings=list(_get("wikistr_mappings", [])),

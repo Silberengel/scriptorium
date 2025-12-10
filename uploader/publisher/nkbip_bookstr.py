@@ -390,6 +390,7 @@ def serialize_bookstr(
     use_bookstr: bool = True,
     book_title_map: dict[str, dict[str, str] | str] | None = None,  # Supports both new format (dict) and old format (str)
     metadata: Any | None = None,  # Metadata object with title, author, published_by, published_on, summary, etc.
+    has_verses: bool = True,  # If False, treat sections as chapters (c tag) without s tag
 ) -> List[Event]:
     """
     Convert generic multi-level CollectionTree into bookstr-like events:
@@ -433,17 +434,22 @@ def serialize_bookstr(
             if hasattr(metadata, "title") and metadata.title:
                 # Replace the title tag with metadata title
                 tags = [[t[0], t[1]] if t[0] != "title" else ["title", metadata.title] for t in tags]
-            if hasattr(metadata, "author") and metadata.author:
+            
+            # Helper to check if a tag already exists
+            def has_tag(tag_name: str) -> bool:
+                return any(t[0] == tag_name for t in tags)
+            
+            if hasattr(metadata, "author") and metadata.author and not has_tag("author"):
                 tags.append(["author", metadata.author])
-            if hasattr(metadata, "published_on") and metadata.published_on:
+            if hasattr(metadata, "published_on") and metadata.published_on and not has_tag("published_on"):
                 tags.append(["published_on", str(metadata.published_on)])
-            if hasattr(metadata, "published_by") and metadata.published_by:
+            if hasattr(metadata, "published_by") and metadata.published_by and not has_tag("published_by"):
                 tags.append(["published_by", str(metadata.published_by)])
-            if hasattr(metadata, "summary") and metadata.summary:
+            if hasattr(metadata, "summary") and metadata.summary and not has_tag("summary"):
                 tags.append(["summary", metadata.summary])
-            if hasattr(metadata, "source") and metadata.source:
+            if hasattr(metadata, "source") and metadata.source and not has_tag("source"):
                 tags.append(["source", metadata.source])
-            if hasattr(metadata, "image") and metadata.image:
+            if hasattr(metadata, "image") and metadata.image and not has_tag("image"):
                 tags.append(["image", metadata.image])
             
             # Add derivative works tags (p and E) if specified
@@ -483,9 +489,13 @@ def serialize_bookstr(
         # Add image and summary to ALL events (unless overridden at chapter/section level)
         # TODO: Support chapter/section-level overrides in the future
         if metadata:
-            if hasattr(metadata, "image") and metadata.image:
+            # Helper to check if a tag already exists
+            def has_tag(tag_name: str) -> bool:
+                return any(t[0] == tag_name for t in tags)
+            
+            if hasattr(metadata, "image") and metadata.image and not has_tag("image"):
                 tags.append(["image", metadata.image])
-            if hasattr(metadata, "summary") and metadata.summary:
+            if hasattr(metadata, "summary") and metadata.summary and not has_tag("summary"):
                 tags.append(["summary", metadata.summary])
         
         # Add NKBIP-08 tags for book wikilinks (hierarchical - each level includes parent tags)
@@ -641,28 +651,37 @@ def serialize_bookstr(
                     # Add all three T tags (display, canonical-long, canonical-short)
                     _add_book_t_tags(s_tags, book_title_for_tag, book_title_map)
             
-            # c tag (chapter) - try to find chapter from parent path if available
-            # Look for a title that contains "chapter" in the path (excluding the last one which is the section)
-            if len(titles) > 1:
-                for i in range(len(titles) - 1):
-                    chapter_title = titles[i]
-                    if "chapter" in chapter_title.lower():
-                        # Extract chapter number from title
-                        chapter_match = re.search(r'chapter\s+(\d+)', chapter_title, re.IGNORECASE)
-                        if chapter_match:
-                            chapter_num = chapter_match.group(1)
-                            c_tag_value = normalize_nkbip08_tag_value(chapter_num)
-                        else:
-                            # Use normalized title as chapter identifier
-                            c_tag_value = normalize_nkbip08_tag_value(chapter_title)
-                        if c_tag_value:
-                            s_tags.append(["c", c_tag_value])
-                        break  # Use first chapter found
-            
-            # s tag (section) - from section title
-            s_tag_value = normalize_nkbip08_tag_value(verse_title)
-            if s_tag_value:
-                s_tags.append(["s", s_tag_value])
+            # c tag (chapter) - behavior depends on has_verses
+            if not has_verses:
+                # When has_verses is False, the section itself is the chapter
+                # Use the section title as the chapter tag
+                c_tag_value = normalize_nkbip08_tag_value(verse_title)
+                if c_tag_value:
+                    s_tags.append(["c", c_tag_value])
+                # Don't add "s" tag when has_verses is False
+            else:
+                # When has_verses is True, try to find chapter from parent path
+                # Look for a title that contains "chapter" in the path (excluding the last one which is the section)
+                if len(titles) > 1:
+                    for i in range(len(titles) - 1):
+                        chapter_title = titles[i]
+                        if "chapter" in chapter_title.lower():
+                            # Extract chapter number from title
+                            chapter_match = re.search(r'chapter\s+(\d+)', chapter_title, re.IGNORECASE)
+                            if chapter_match:
+                                chapter_num = chapter_match.group(1)
+                                c_tag_value = normalize_nkbip08_tag_value(chapter_num)
+                            else:
+                                # Use normalized title as chapter identifier
+                                c_tag_value = normalize_nkbip08_tag_value(chapter_title)
+                            if c_tag_value:
+                                s_tags.append(["c", c_tag_value])
+                            break  # Use first chapter found
+                
+                # s tag (section) - from section title (only when has_verses is True)
+                s_tag_value = normalize_nkbip08_tag_value(verse_title)
+                if s_tag_value:
+                    s_tags.append(["s", s_tag_value])
             
             # v tag (version) - add to ALL events when version is specified
             if metadata and hasattr(metadata, "version") and metadata.version:
@@ -845,7 +864,30 @@ def serialize_bookstr(
                         if child_kind == 30041
                     ]
                     
-                    if direct_30041_children:
+                    # Only create Preamble if there are 30041 children WITHOUT "s" tags
+                    # (i.e., raw content without proper section headers)
+                    # If all children have "s" tags, they're already proper sections and don't need a Preamble
+                    children_without_s_tag = []
+                    for child_kind, child_d in direct_30041_children:
+                        # Find the child event and check if it has an "s" tag
+                        has_s_tag = False
+                        for child_event in events:
+                            child_d_tag = None
+                            for tag in child_event.tags:
+                                if tag and len(tag) > 0 and tag[0] == "d":
+                                    child_d_tag = tag[1] if len(tag) > 1 else None
+                                    break
+                            if child_d_tag == child_d:
+                                # Check if this event has an "s" tag
+                                for tag in child_event.tags:
+                                    if tag and len(tag) > 0 and tag[0] == "s":
+                                        has_s_tag = True
+                                        break
+                                break
+                        if not has_s_tag:
+                            children_without_s_tag.append((child_kind, child_d))
+                    
+                    if children_without_s_tag:
                         # Create a Preamble chapter for this book
                         # Preamble d-tag: book_d_tag + "-preamble"
                         preamble_d = f"{d_tag}-preamble"
@@ -896,8 +938,8 @@ def serialize_bookstr(
                         preamble_event = Event(kind=30040, tags=preamble_tags, content="")
                         events.append(preamble_event)
                         
-                        # Update parent references for the 30041 children to point to Preamble
-                        for child_kind, child_d in direct_30041_children:
+                        # Update parent references for the 30041 children (without s-tags) to point to Preamble
+                        for child_kind, child_d in children_without_s_tag:
                             # Find the child event and update its parent reference
                             for child_event in events:
                                 child_d_tag = None
@@ -950,10 +992,15 @@ def serialize_bookstr(
                 
                 for child_kind, child_d in parent_d_to_children[d_tag]:
                     # Per NKBIP-08: T-level events (book/title) should ONLY contain c-level events (30040)
-                    # If this is a book with direct 30041 children, they should now be under Preamble
+                    # However, if there's no Preamble chapter (because children have s-tags), 
+                    # the 30041 content events are direct children and should be referenced via a-tags
+                    # Skip 30041 children only if there's a Preamble (which would have been created earlier)
                     if event_type == "book" and child_kind == 30041:
-                        # This shouldn't happen after Preamble creation, but skip just in case
-                        continue
+                        # Only skip if there's a Preamble for this book
+                        if d_tag in book_d_to_preamble_d:
+                            # Children are under Preamble, so skip direct references
+                            continue
+                        # Otherwise, these are direct children and should be referenced
                     
                     # Format: ["a", "<kind>:<pubkey>:<d-tag>", "<relay hint>", "<event id>"]
                     # Relay hint and event id are optional - we'll use empty strings as placeholders

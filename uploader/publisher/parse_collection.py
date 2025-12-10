@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import re
 
 
@@ -30,6 +30,7 @@ def parse_adoc_structure(
     *,
     has_collection: bool = True,  # retained for compatibility, not strictly required now
     collection_title: Optional[str] = None,  # unused in generic parser
+    has_verses: bool = True,  # If False, treat all content as sections (no verses)
 ) -> CollectionTree:
     """
     Generic AsciiDoc heading parser:
@@ -74,12 +75,16 @@ def parse_adoc_structure(
         nodes.append(([(lv, tt) for lv, tt, _ in stack] + [(lvl, ttl)], buf))
 
     # Determine verse level: deepest level that has any non-empty content (after strip)
-    contentful_levels: List[int] = []
-    for path, buf in nodes:
-        content = "\n".join(buf).strip()
-        if content:
-            contentful_levels.append(path[-1][0])
-    section_level = max(contentful_levels) if contentful_levels else 4
+    # If has_verses is False, set section_level to a very high number so all content is treated as sections
+    if not has_verses:
+        section_level = 999  # High number so no level matches it
+    else:
+        contentful_levels: List[int] = []
+        for path, buf in nodes:
+            content = "\n".join(buf).strip()
+            if content:
+                contentful_levels.append(path[-1][0])
+        section_level = max(contentful_levels) if contentful_levels else 4
     
     # Debug: count sections by level
     level_counts: Dict[int, int] = {}
