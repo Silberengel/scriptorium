@@ -1,7 +1,3 @@
-:doctype: article
-
-:lang: en
-
 = Jane Eyre, an Autobiography
 
 == Preface
